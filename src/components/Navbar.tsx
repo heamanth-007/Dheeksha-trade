@@ -1,0 +1,202 @@
+import type { FC } from 'react';
+import { Box, Typography, IconButton } from '@mui/material';
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
+import NotificationsNoneRoundedIcon from '@mui/icons-material/NotificationsNoneRounded';
+import PersonOutlineRoundedIcon from '@mui/icons-material/PersonOutlineRounded';
+
+export type NavTab = 'Customers' | 'Company' | 'Product' | 'Particulars';
+
+interface NavbarProps {
+  activeTab?: NavTab;
+  onSelectTab?: (tab: NavTab) => void;
+  onNavigateCustomers?: () => void;
+}
+
+export const Navbar: FC<NavbarProps> = ({
+  activeTab = 'Company',
+  onSelectTab,
+  onNavigateCustomers,
+}) => {
+  const tabs: NavTab[] = ['Customers', 'Company', 'Product', 'Particulars'];
+
+  const handleTabClick = (tab: NavTab) => {
+    if (onSelectTab) {
+      onSelectTab(tab);
+    } else if (tab === 'Customers' && onNavigateCustomers) {
+      onNavigateCustomers();
+    }
+  };
+
+  return (
+    <Box
+      component="header"
+      sx={{
+        width: '100%',
+        backgroundColor: '#FFFFFF',
+        borderBottom: '1px solid #EEF2F6',
+        px: { xs: 2.5, md: 4.5 },
+        height: '64px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        position: 'sticky',
+        top: 0,
+        zIndex: 1100,
+        boxSizing: 'border-box',
+      }}
+    >
+      {/* Left Logo Section */}
+      <Box
+        onClick={() => handleTabClick('Customers')}
+        sx={{ display: 'flex', alignItems: 'center', gap: 1.5, cursor: 'pointer' }}
+      >
+        {/* Stylized D Logo Badge */}
+        <Box
+          sx={{
+            width: 32,
+            height: 32,
+            borderRadius: '8px',
+            border: '1px solid #E2E8F0',
+            backgroundColor: '#FFFFFF',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+            overflow: 'hidden',
+          }}
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2" y="2" width="20" height="20" rx="4" fill="#F8FAFC" />
+            <path
+              d="M7 6H13C16.3137 6 19 8.68629 19 12C19 15.3137 16.3137 18 13 18H7V6Z"
+              stroke="#0B4DB7"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <path
+              d="M10 9.5H13C14.3807 9.5 15.5 10.6193 15.5 12C15.5 13.3807 14.3807 14.5 13 14.5H10V9.5Z"
+              fill="#0B4DB7"
+            />
+          </svg>
+        </Box>
+
+        <Typography
+          variant="h6"
+          sx={{
+            fontWeight: 700,
+            fontSize: '18px',
+            color: '#0F172A',
+            letterSpacing: '-0.01em',
+          }}
+        >
+          Dheeksha
+        </Typography>
+      </Box>
+
+      {/* Center Navigation Links */}
+      <Box
+        component="nav"
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: { xs: 3, md: 4.5 },
+          height: '100%',
+        }}
+      >
+        {tabs.map((tab) => {
+          const isActive = activeTab === tab;
+          return (
+            <Box
+              key={tab}
+              onClick={() => handleTabClick(tab)}
+              sx={{
+                position: 'relative',
+                height: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                cursor: 'pointer',
+                transition: 'color 0.15s ease',
+              }}
+            >
+              <Typography
+                sx={{
+                  fontWeight: isActive ? 600 : 500,
+                  fontSize: '14.5px',
+                  color: isActive ? '#0B4DB7' : '#475569',
+                  letterSpacing: '-0.01em',
+                  px: 0.5,
+                  transition: 'color 0.15s ease',
+                  '&:hover': {
+                    color: '#0B4DB7',
+                  },
+                }}
+              >
+                {tab}
+              </Typography>
+
+              {/* Active indicator underline bar */}
+              {isActive && (
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    height: '3px',
+                    backgroundColor: '#0B4DB7',
+                    borderTopLeftRadius: '2px',
+                    borderTopRightRadius: '2px',
+                  }}
+                />
+              )}
+            </Box>
+          );
+        })}
+      </Box>
+
+      {/* Right Action Icons */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        <IconButton
+          size="small"
+          sx={{
+            color: '#475569',
+            p: 0.8,
+            '&:hover': { backgroundColor: '#F1F5F9' },
+          }}
+        >
+          <SearchRoundedIcon sx={{ fontSize: 20 }} />
+        </IconButton>
+
+        <IconButton
+          size="small"
+          sx={{
+            color: '#475569',
+            p: 0.8,
+            '&:hover': { backgroundColor: '#F1F5F9' },
+          }}
+        >
+          <NotificationsNoneRoundedIcon sx={{ fontSize: 20 }} />
+        </IconButton>
+
+        <Box
+          sx={{
+            width: 32,
+            height: 32,
+            borderRadius: '50%',
+            backgroundColor: '#0B4DB7',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            ml: 0.5,
+            transition: 'opacity 0.2s',
+            '&:hover': { opacity: 0.9 },
+          }}
+        >
+          <PersonOutlineRoundedIcon sx={{ fontSize: 19, color: '#FFFFFF' }} />
+        </Box>
+      </Box>
+    </Box>
+  );
+};
