@@ -6,11 +6,14 @@ import { CustomersPage } from './components/CustomersPage';
 import { AddCustomerPage } from './components/AddCustomerPage';
 import { CompaniesPage } from './components/CompaniesPage';
 import { AddCompanyPage } from './components/AddCompanyPage';
+import { ProductsPage } from './components/ProductsPage';
+import { ParticularsPage } from './components/ParticularsPage';
 
 function App() {
-  const [activeTab, setActiveTab] = useState<NavTab>('Company');
+  const [activeTab, setActiveTab] = useState<NavTab>('Product');
   const [companySubView, setCompanySubView] = useState<'list' | 'add'>('list');
   const [customerSubView, setCustomerSubView] = useState<'list' | 'add'>('list');
+  const [selectedCustomerName, setSelectedCustomerName] = useState<string>('R A TRADERS 2025');
 
   const handleSelectTab = (tab: NavTab) => {
     setActiveTab(tab);
@@ -20,6 +23,11 @@ function App() {
     if (tab === 'Customers') {
       setCustomerSubView('list');
     }
+  };
+
+  const handleCustomerSelectedForParticular = (customerName: string) => {
+    setSelectedCustomerName(customerName);
+    setActiveTab('Particulars');
   };
 
   return (
@@ -44,6 +52,14 @@ function App() {
         />
 
         <Box component="main" sx={{ flexGrow: 1, width: '100%' }}>
+          {/* Particulars Tab */}
+          {activeTab === 'Particulars' && (
+            <ParticularsPage initialCustomerName={selectedCustomerName} />
+          )}
+
+          {/* Product Tab */}
+          {activeTab === 'Product' && <ProductsPage />}
+
           {/* Company Tab */}
           {activeTab === 'Company' && (
             <>
@@ -68,17 +84,23 @@ function App() {
                   onSubmitSuccess={() => setCustomerSubView('list')}
                 />
               ) : (
-                <CustomersPage onAddNew={() => setCustomerSubView('add')} />
+                <CustomersPage
+                  onAddNew={() => setCustomerSubView('add')}
+                  onSelectCustomerForParticular={handleCustomerSelectedForParticular}
+                />
               )}
             </>
           )}
 
           {/* Other Tabs */}
-          {activeTab !== 'Company' && activeTab !== 'Customers' && (
-            <Box sx={{ p: 4, textAlign: 'center', color: '#64748B' }}>
-              {activeTab} content coming soon.
-            </Box>
-          )}
+          {activeTab !== 'Particulars' &&
+            activeTab !== 'Product' &&
+            activeTab !== 'Company' &&
+            activeTab !== 'Customers' && (
+              <Box sx={{ p: 4, textAlign: 'center', color: '#64748B' }}>
+                {activeTab} content coming soon.
+              </Box>
+            )}
         </Box>
       </Box>
     </ThemeProvider>

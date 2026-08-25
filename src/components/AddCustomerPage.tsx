@@ -5,8 +5,10 @@ import {
   Button,
   InputBase,
   Paper,
+  CircularProgress,
 } from '@mui/material';
 import AddCircleOutlineRoundedIcon from '@mui/icons-material/AddCircleOutlineRounded';
+import { CustomersApi } from '../services/api';
 
 interface AddCustomerPageProps {
   onCancel?: () => void;
@@ -23,6 +25,7 @@ export const AddCustomerPage: FC<AddCustomerPageProps> = ({
     gstin: '',
     billingAddress: '',
   });
+  const [loading, setLoading] = useState(false);
 
   const handleChange = (field: string) => (
     e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -33,9 +36,31 @@ export const AddCustomerPage: FC<AddCustomerPageProps> = ({
     }));
   };
 
-  const handleSubmit = () => {
-    if (onSubmitSuccess) {
-      onSubmitSuccess();
+  const handleSubmit = async () => {
+    if (!formData.fullName.trim() || !formData.billingAddress.trim()) {
+      alert('Please fill in required fields (Full Name and Address)');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await CustomersApi.create({
+        name: formData.fullName.trim(),
+        mobile: formData.mobileNumber.trim() || 'N/A',
+        gst: formData.gstin.trim() || 'N/A',
+        address: formData.billingAddress.trim(),
+        avatarLetter: formData.fullName.trim().charAt(0).toUpperCase(),
+        avatarBg: '#DBEAFE',
+        avatarColor: '#0B4DB7',
+      });
+      if (onSubmitSuccess) {
+        onSubmitSuccess();
+      }
+    } catch (err) {
+      console.error('Failed to create customer:', err);
+      alert('Error creating customer. Please check your backend connection.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -54,7 +79,7 @@ export const AddCustomerPage: FC<AddCustomerPageProps> = ({
           variant="h1"
           sx={{
             fontSize: '28px',
-            fontWeight: 700,
+            fontWeight: 800,
             color: '#0F172A',
             letterSpacing: '-0.025em',
             lineHeight: 1.2,
@@ -67,7 +92,7 @@ export const AddCustomerPage: FC<AddCustomerPageProps> = ({
           sx={{
             fontSize: '14px',
             color: '#64748B',
-            fontWeight: 400,
+            fontWeight: 500,
             letterSpacing: '-0.01em',
           }}
         >
@@ -99,47 +124,45 @@ export const AddCustomerPage: FC<AddCustomerPageProps> = ({
             {/* Full Name Field */}
             <Box>
               <Typography
-                component="label"
                 sx={{
-                  display: 'block',
                   fontSize: '13px',
-                  fontWeight: 600,
-                  color: '#334155',
-                  mb: 0.9,
+                  fontWeight: 700,
+                  color: '#1E293B',
+                  mb: 1,
                   letterSpacing: '-0.01em',
                 }}
               >
-                Full Name
+                Full Name / Business Name *
               </Typography>
               <Box
                 sx={{
-                  backgroundColor: '#F1F4FA',
-                  borderRadius: '8px',
-                  px: 2,
-                  height: '46px',
                   display: 'flex',
                   alignItems: 'center',
-                  transition: 'background-color 0.2s, box-shadow 0.2s',
+                  backgroundColor: '#F8FAFC',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: '8px',
+                  px: 1.5,
+                  height: '42px',
+                  transition: 'all 0.15s ease',
                   '&:focus-within': {
-                    backgroundColor: '#EDF1F8',
-                    boxShadow: '0 0 0 2px rgba(11, 77, 183, 0.15)',
+                    borderColor: '#0B4DB7',
+                    backgroundColor: '#FFFFFF',
+                    boxShadow: '0 0 0 3px rgba(11, 77, 183, 0.1)',
                   },
                 }}
               >
                 <InputBase
                   fullWidth
-                  placeholder="e.g., Aravind Kumar"
+                  placeholder="e.g. Acme Corporation"
                   value={formData.fullName}
                   onChange={handleChange('fullName')}
                   sx={{
-                    fontSize: '14px',
-                    color: '#1E293B',
-                    '& input': {
-                      p: 0,
-                      '&::placeholder': {
-                        color: '#94A3B8',
-                        opacity: 1,
-                      },
+                    fontSize: '13.5px',
+                    fontWeight: 500,
+                    color: '#0F172A',
+                    '& input::placeholder': {
+                      color: '#94A3B8',
+                      opacity: 1,
                     },
                   }}
                 />
@@ -149,13 +172,11 @@ export const AddCustomerPage: FC<AddCustomerPageProps> = ({
             {/* Mobile Number Field */}
             <Box>
               <Typography
-                component="label"
                 sx={{
-                  display: 'block',
                   fontSize: '13px',
-                  fontWeight: 600,
-                  color: '#334155',
-                  mb: 0.9,
+                  fontWeight: 700,
+                  color: '#1E293B',
+                  mb: 1,
                   letterSpacing: '-0.01em',
                 }}
               >
@@ -163,84 +184,81 @@ export const AddCustomerPage: FC<AddCustomerPageProps> = ({
               </Typography>
               <Box
                 sx={{
-                  backgroundColor: '#F1F4FA',
-                  borderRadius: '8px',
-                  px: 2,
-                  height: '46px',
                   display: 'flex',
                   alignItems: 'center',
-                  transition: 'background-color 0.2s, box-shadow 0.2s',
+                  backgroundColor: '#F8FAFC',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: '8px',
+                  px: 1.5,
+                  height: '42px',
+                  transition: 'all 0.15s ease',
                   '&:focus-within': {
-                    backgroundColor: '#EDF1F8',
-                    boxShadow: '0 0 0 2px rgba(11, 77, 183, 0.15)',
+                    borderColor: '#0B4DB7',
+                    backgroundColor: '#FFFFFF',
+                    boxShadow: '0 0 0 3px rgba(11, 77, 183, 0.1)',
                   },
                 }}
               >
                 <InputBase
                   fullWidth
-                  placeholder="+91 XXXXX XXXXX"
+                  placeholder="e.g. +91 98765 43210"
                   value={formData.mobileNumber}
                   onChange={handleChange('mobileNumber')}
                   sx={{
-                    fontSize: '14px',
-                    color: '#1E293B',
-                    '& input': {
-                      p: 0,
-                      '&::placeholder': {
-                        color: '#94A3B8',
-                        opacity: 1,
-                      },
+                    fontSize: '13.5px',
+                    fontWeight: 500,
+                    color: '#0F172A',
+                    '& input::placeholder': {
+                      color: '#94A3B8',
+                      opacity: 1,
                     },
                   }}
                 />
               </Box>
             </Box>
 
-            {/* GSTIN (Optional) Field */}
-            <Box sx={{ gridColumn: { xs: '1 / -1', sm: '1 / -1' } }}>
+            {/* GSTIN Field */}
+            <Box>
               <Typography
-                component="label"
                 sx={{
-                  display: 'block',
                   fontSize: '13px',
-                  fontWeight: 600,
-                  color: '#334155',
-                  mb: 0.9,
+                  fontWeight: 700,
+                  color: '#1E293B',
+                  mb: 1,
                   letterSpacing: '-0.01em',
                 }}
               >
-                GSTIN (Optional)
+                GSTIN / Tax ID
               </Typography>
               <Box
                 sx={{
-                  backgroundColor: '#F1F4FA',
-                  borderRadius: '8px',
-                  px: 2,
-                  height: '46px',
                   display: 'flex',
                   alignItems: 'center',
-                  transition: 'background-color 0.2s, box-shadow 0.2s',
+                  backgroundColor: '#F8FAFC',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: '8px',
+                  px: 1.5,
+                  height: '42px',
+                  transition: 'all 0.15s ease',
                   '&:focus-within': {
-                    backgroundColor: '#EDF1F8',
-                    boxShadow: '0 0 0 2px rgba(11, 77, 183, 0.15)',
+                    borderColor: '#0B4DB7',
+                    backgroundColor: '#FFFFFF',
+                    boxShadow: '0 0 0 3px rgba(11, 77, 183, 0.1)',
                   },
                 }}
               >
                 <InputBase
                   fullWidth
-                  placeholder="ENTER 15-DIGIT GST NUMBER"
+                  placeholder="e.g. 29ABCDE1234F1Z5"
                   value={formData.gstin}
                   onChange={handleChange('gstin')}
                   sx={{
                     fontSize: '13.5px',
-                    color: '#1E293B',
-                    '& input': {
-                      p: 0,
-                      textTransform: 'uppercase',
-                      '&::placeholder': {
-                        color: '#94A3B8',
-                        opacity: 1,
-                      },
+                    fontWeight: 500,
+                    color: '#0F172A',
+                    '& input::placeholder': {
+                      color: '#94A3B8',
+                      opacity: 1,
                     },
                   }}
                 />
@@ -248,53 +266,47 @@ export const AddCustomerPage: FC<AddCustomerPageProps> = ({
             </Box>
 
             {/* Billing Address Field */}
-            <Box sx={{ gridColumn: { xs: '1 / -1', sm: '1 / -1' } }}>
+            <Box>
               <Typography
-                component="label"
                 sx={{
-                  display: 'block',
                   fontSize: '13px',
-                  fontWeight: 600,
-                  color: '#334155',
-                  mb: 0.9,
+                  fontWeight: 700,
+                  color: '#1E293B',
+                  mb: 1,
                   letterSpacing: '-0.01em',
                 }}
               >
-                Billing Address
+                Billing / Delivery Address *
               </Typography>
               <Box
                 sx={{
-                  backgroundColor: '#F1F4FA',
-                  borderRadius: '8px',
-                  px: 2,
-                  py: 1.5,
-                  minHeight: '90px',
                   display: 'flex',
-                  alignItems: 'flex-start',
-                  transition: 'background-color 0.2s, box-shadow 0.2s',
+                  alignItems: 'center',
+                  backgroundColor: '#F8FAFC',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: '8px',
+                  px: 1.5,
+                  height: '42px',
+                  transition: 'all 0.15s ease',
                   '&:focus-within': {
-                    backgroundColor: '#EDF1F8',
-                    boxShadow: '0 0 0 2px rgba(11, 77, 183, 0.15)',
+                    borderColor: '#0B4DB7',
+                    backgroundColor: '#FFFFFF',
+                    boxShadow: '0 0 0 3px rgba(11, 77, 183, 0.1)',
                   },
                 }}
               >
                 <InputBase
                   fullWidth
-                  multiline
-                  rows={3}
-                  placeholder="Complete address with pincode..."
+                  placeholder="e.g. 123 Industrial Area, Phase 2"
                   value={formData.billingAddress}
                   onChange={handleChange('billingAddress')}
                   sx={{
-                    fontSize: '14px',
-                    color: '#1E293B',
-                    '& textarea': {
-                      p: 0,
-                      resize: 'none',
-                      '&::placeholder': {
-                        color: '#94A3B8',
-                        opacity: 1,
-                      },
+                    fontSize: '13.5px',
+                    fontWeight: 500,
+                    color: '#0F172A',
+                    '& input::placeholder': {
+                      color: '#94A3B8',
+                      opacity: 1,
                     },
                   }}
                 />
@@ -306,57 +318,59 @@ export const AddCustomerPage: FC<AddCustomerPageProps> = ({
           <Box
             sx={{
               display: 'flex',
-              justifyContent: 'flex-end',
               alignItems: 'center',
+              justifyContent: 'flex-end',
               gap: 1.5,
-              mt: 3.5,
+              mt: 4,
+              pt: 3,
+              borderTop: '1px solid #EEF2F6',
             }}
           >
-            {/* Cancel Button */}
             <Button
-              variant="contained"
-              disableElevation
+              variant="outlined"
               onClick={onCancel}
+              disabled={loading}
               sx={{
-                backgroundColor: '#E2E8F0',
-                color: '#475569',
                 height: '40px',
-                px: 2.8,
+                px: 2.5,
                 borderRadius: '8px',
                 fontSize: '13.5px',
                 fontWeight: 600,
+                color: '#64748B',
+                borderColor: '#E2E8F0',
                 textTransform: 'none',
-                letterSpacing: '-0.01em',
                 '&:hover': {
-                  backgroundColor: '#CBD5E1',
+                  borderColor: '#CBD5E1',
+                  backgroundColor: '#F8FAFC',
                 },
               }}
             >
               Cancel
             </Button>
 
-            {/* Click to Create Button */}
             <Button
               variant="contained"
               disableElevation
               onClick={handleSubmit}
-              startIcon={<AddCircleOutlineRoundedIcon sx={{ fontSize: '18px !important' }} />}
+              disabled={loading}
+              startIcon={
+                loading ? <CircularProgress size={16} color="inherit" /> : <AddCircleOutlineRoundedIcon sx={{ fontSize: 18 }} />
+              }
               sx={{
-                backgroundColor: '#0B4DB7',
-                color: '#FFFFFF',
                 height: '40px',
-                px: 2.5,
+                px: 3,
                 borderRadius: '8px',
                 fontSize: '13.5px',
-                fontWeight: 600,
+                fontWeight: 700,
+                backgroundColor: '#0B4DB7',
+                color: '#FFFFFF',
                 textTransform: 'none',
-                letterSpacing: '-0.01em',
                 '&:hover': {
-                  backgroundColor: '#09409B',
+                  backgroundColor: '#083B8D',
                 },
               }}
             >
-              Click to Create
+              {loading ? 'Creating...' : 'Register Customer'}
             </Button>
           </Box>
         </Box>
@@ -364,5 +378,3 @@ export const AddCustomerPage: FC<AddCustomerPageProps> = ({
     </Box>
   );
 };
-
-export default AddCustomerPage;

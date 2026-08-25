@@ -1,4 +1,4 @@
-import { useState, type FC } from 'react';
+import { useState, useEffect, type FC } from 'react';
 import {
   Box,
   Typography,
@@ -12,60 +12,25 @@ import {
   TableRow,
   Paper,
   IconButton,
+  Tooltip,
+  CircularProgress,
 } from '@mui/material';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
-import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded';
-import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import { CompaniesApi } from '../services/api';
 
-interface CompanyItem {
-  slNo: string;
+export interface Company {
+  _id?: string;
+  id?: string;
+  slNo?: string;
   name: string;
-  avatarLetter: string;
-  avatarBg: string;
-  avatarColor: string;
+  avatarLetter?: string;
+  avatarBg?: string;
+  avatarColor?: string;
   address: string;
   gstin: string;
 }
-
-const COMPANIES_DATA: CompanyItem[] = [
-  {
-    slNo: '01',
-    name: 'Acme Logistics Pvt Ltd',
-    avatarLetter: 'A',
-    avatarBg: '#DBEAFE',
-    avatarColor: '#0B4DB7',
-    address: '124 Industrial Area, Phase 1, Mumbai, Maharashtra 400001',
-    gstin: '27AADCA2230M1Z2',
-  },
-  {
-    slNo: '02',
-    name: 'Global Traders LLC',
-    avatarLetter: 'G',
-    avatarBg: '#DBEAFE',
-    avatarColor: '#0B4DB7',
-    address: 'Unit 4B, Tech Park, Whitefield, Bangalore, Karnataka 560066',
-    gstin: '29BBBPG1234N1Z5',
-  },
-  {
-    slNo: '03',
-    name: 'Nexus Manufacturing',
-    avatarLetter: 'N',
-    avatarBg: '#DBEAFE',
-    avatarColor: '#0B4DB7',
-    address: 'Plot 88, Sector 15, Gurgaon, Haryana 122015',
-    gstin: '06AAACN4321P2Z9',
-  },
-  {
-    slNo: '04',
-    name: 'Stellar Enterprises',
-    avatarLetter: 'S',
-    avatarBg: '#DBEAFE',
-    avatarColor: '#0B4DB7',
-    address: '45/A, Anna Salai, Chennai, Tamil Nadu 600002',
-    gstin: '33AADCS5678Q1Z4',
-  },
-];
 
 interface CompaniesPageProps {
   onAddCompany?: () => void;
@@ -73,7 +38,42 @@ interface CompaniesPageProps {
 
 export const CompaniesPage: FC<CompaniesPageProps> = ({ onAddCompany }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [activePage, setActivePage] = useState(1);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchCompanies = async () => {
+    try {
+      setLoading(true);
+      const data = await CompaniesApi.getAll();
+      setCompanies(data || []);
+    } catch (err) {
+      console.error('Failed to fetch companies:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCompanies();
+  }, []);
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this company?')) return;
+    try {
+      await CompaniesApi.delete(id);
+      setCompanies((prev) => prev.filter((c) => (c._id || c.id) !== id));
+    } catch (err) {
+      console.error('Failed to delete company:', err);
+      alert('Error deleting company');
+    }
+  };
+
+  const filteredCompanies = companies.filter(
+    (c) =>
+      c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      c.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      c.gstin.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
     <Box
@@ -84,7 +84,7 @@ export const CompaniesPage: FC<CompaniesPageProps> = ({ onAddCompany }) => {
         boxSizing: 'border-box',
       }}
     >
-      {/* Page Header (Title & Controls) */}
+      {/* Page Header */}
       <Box
         sx={{
           display: 'flex',
@@ -92,34 +92,21 @@ export const CompaniesPage: FC<CompaniesPageProps> = ({ onAddCompany }) => {
           justifyContent: 'space-between',
           alignItems: { xs: 'flex-start', sm: 'center' },
           gap: 2,
-          mb: 3,
+          mb: 3.2,
         }}
       >
-        <Box>
-          <Typography
-            variant="h1"
-            sx={{
-              fontSize: '28px',
-              fontWeight: 700,
-              color: '#0F172A',
-              letterSpacing: '-0.025em',
-              lineHeight: 1.2,
-            }}
-          >
-            Registered Companies
-          </Typography>
-          <Typography
-            sx={{
-              fontSize: '14px',
-              color: '#64748B',
-              fontWeight: 400,
-              mt: 0.5,
-              letterSpacing: '-0.01em',
-            }}
-          >
-            Manage your business directory and tax credentials.
-          </Typography>
-        </Box>
+        <Typography
+          variant="h1"
+          sx={{
+            fontSize: '30px',
+            fontWeight: 800,
+            color: '#0F172A',
+            letterSpacing: '-0.025em',
+            lineHeight: 1.2,
+          }}
+        >
+          Company
+        </Typography>
 
         <Box
           sx={{
@@ -159,6 +146,7 @@ export const CompaniesPage: FC<CompaniesPageProps> = ({ onAddCompany }) => {
               onChange={(e) => setSearchTerm(e.target.value)}
               sx={{
                 fontSize: '13.5px',
+                fontWeight: 500,
                 color: '#1E293B',
                 width: '100%',
                 '& input': {
@@ -177,7 +165,7 @@ export const CompaniesPage: FC<CompaniesPageProps> = ({ onAddCompany }) => {
             variant="contained"
             disableElevation
             onClick={onAddCompany}
-            startIcon={<AddRoundedIcon sx={{ fontSize: '18px !important' }} />}
+            startIcon={<AddRoundedIcon sx={{ fontSize: 19 }} />}
             sx={{
               backgroundColor: '#0B4DB7',
               color: '#FFFFFF',
@@ -185,12 +173,13 @@ export const CompaniesPage: FC<CompaniesPageProps> = ({ onAddCompany }) => {
               px: 2,
               borderRadius: '8px',
               fontSize: '13.5px',
-              fontWeight: 600,
+              fontWeight: 700,
               textTransform: 'none',
               letterSpacing: '-0.01em',
               whiteSpace: 'nowrap',
+              boxShadow: '0 1px 2px rgba(11, 77, 183, 0.15)',
               '&:hover': {
-                backgroundColor: '#09409B',
+                backgroundColor: '#083B8D',
               },
             }}
           >
@@ -211,62 +200,59 @@ export const CompaniesPage: FC<CompaniesPageProps> = ({ onAddCompany }) => {
           overflow: 'hidden',
         }}
       >
-        <TableContainer sx={{ overflowX: 'auto' }}>
-          <Table sx={{ minWidth: 800 }} aria-label="companies table">
+        <TableContainer>
+          <Table sx={{ width: '100%' }} aria-label="companies table">
             <TableHead>
               <TableRow sx={{ backgroundColor: '#F8FAFC' }}>
                 <TableCell
                   sx={{
-                    py: 1.4,
+                    py: 1.6,
                     px: 3,
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    color: '#64748B',
-                    letterSpacing: '-0.01em',
-                    borderBottom: '1px solid #F1F5F9',
-                    width: '70px',
+                    fontSize: '11.5px',
+                    fontWeight: 700,
+                    color: '#475569',
+                    letterSpacing: '0.04em',
+                    borderBottom: '1px solid #EEF2F6',
+                    width: '100px',
                   }}
                 >
-                  Sl.No
+                  SL.NO
                 </TableCell>
                 <TableCell
                   sx={{
-                    py: 1.4,
-                    px: 2,
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    color: '#64748B',
-                    letterSpacing: '-0.01em',
-                    borderBottom: '1px solid #F1F5F9',
-                    minWidth: '240px',
+                    py: 1.6,
+                    px: 3,
+                    fontSize: '11.5px',
+                    fontWeight: 700,
+                    color: '#475569',
+                    letterSpacing: '0.04em',
+                    borderBottom: '1px solid #EEF2F6',
                   }}
                 >
-                  Company Name
+                  COMPANY NAME
                 </TableCell>
                 <TableCell
                   sx={{
-                    py: 1.4,
-                    px: 2,
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    color: '#64748B',
-                    letterSpacing: '-0.01em',
-                    borderBottom: '1px solid #F1F5F9',
-                    minWidth: '380px',
+                    py: 1.6,
+                    px: 3,
+                    fontSize: '11.5px',
+                    fontWeight: 700,
+                    color: '#475569',
+                    letterSpacing: '0.04em',
+                    borderBottom: '1px solid #EEF2F6',
                   }}
                 >
-                  Address
+                  ADDRESS
                 </TableCell>
                 <TableCell
                   sx={{
-                    py: 1.4,
-                    px: 2,
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    color: '#64748B',
-                    letterSpacing: '-0.01em',
-                    borderBottom: '1px solid #F1F5F9',
-                    minWidth: '180px',
+                    py: 1.6,
+                    px: 3,
+                    fontSize: '11.5px',
+                    fontWeight: 700,
+                    color: '#475569',
+                    letterSpacing: '0.04em',
+                    borderBottom: '1px solid #EEF2F6',
                   }}
                 >
                   GSTIN
@@ -274,278 +260,171 @@ export const CompaniesPage: FC<CompaniesPageProps> = ({ onAddCompany }) => {
                 <TableCell
                   align="right"
                   sx={{
-                    py: 1.4,
+                    py: 1.6,
                     px: 3,
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    color: '#64748B',
-                    letterSpacing: '-0.01em',
-                    borderBottom: '1px solid #F1F5F9',
-                    width: '80px',
+                    fontSize: '11.5px',
+                    fontWeight: 700,
+                    color: '#475569',
+                    letterSpacing: '0.04em',
+                    borderBottom: '1px solid #EEF2F6',
+                    width: '100px',
                   }}
                 >
-                  Actions
+                  ACTIONS
                 </TableCell>
               </TableRow>
             </TableHead>
 
             <TableBody>
-              {COMPANIES_DATA.map((company) => (
-                <TableRow
-                  key={company.slNo}
-                  sx={{
-                    transition: 'background-color 0.15s ease',
-                    '&:hover': {
-                      backgroundColor: '#FAFAFC',
-                    },
-                    '&:last-child td': {
-                      borderBottom: 0,
-                    },
-                  }}
-                >
-                  {/* Sl.No */}
-                  <TableCell
-                    sx={{
-                      py: 2.2,
-                      px: 3,
-                      fontSize: '13.5px',
-                      fontWeight: 500,
-                      color: '#8E9AA8',
-                      borderBottom: '1px solid #F8FAFC',
-                    }}
-                  >
-                    {company.slNo}
-                  </TableCell>
-
-                  {/* Company Name with Avatar */}
-                  <TableCell
-                    sx={{
-                      py: 2.2,
-                      px: 2,
-                      borderBottom: '1px solid #F8FAFC',
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                      <Box
-                        sx={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: '8px',
-                          backgroundColor: company.avatarBg,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
-                        }}
-                      >
-                        <Typography
-                          sx={{
-                            fontWeight: 700,
-                            fontSize: '14px',
-                            color: company.avatarColor,
-                            lineHeight: 1,
-                          }}
-                        >
-                          {company.avatarLetter}
-                        </Typography>
-                      </Box>
-                      <Typography
-                        sx={{
-                          fontWeight: 600,
-                          fontSize: '14px',
-                          color: '#1E293B',
-                          letterSpacing: '-0.01em',
-                        }}
-                      >
-                        {company.name}
-                      </Typography>
-                    </Box>
-                  </TableCell>
-
-                  {/* Address */}
-                  <TableCell
-                    sx={{
-                      py: 2.2,
-                      px: 2,
-                      fontSize: '13.5px',
-                      color: '#475569',
-                      fontWeight: 400,
-                      borderBottom: '1px solid #F8FAFC',
-                    }}
-                  >
-                    {company.address}
-                  </TableCell>
-
-                  {/* GSTIN */}
-                  <TableCell
-                    sx={{
-                      py: 2.2,
-                      px: 2,
-                      fontSize: '13.5px',
-                      color: '#1E293B',
-                      fontWeight: 500,
-                      borderBottom: '1px solid #F8FAFC',
-                    }}
-                  >
-                    {company.gstin}
-                  </TableCell>
-
-                  {/* Actions */}
-                  <TableCell
-                    align="right"
-                    sx={{
-                      py: 2.2,
-                      px: 3,
-                      borderBottom: '1px solid #F8FAFC',
-                    }}
-                  >
-                    {/* Empty cell as in the Figma reference */}
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={5} align="center" sx={{ py: 6 }}>
+                    <CircularProgress size={32} sx={{ color: '#0B4DB7' }} />
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : filteredCompanies.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} align="center" sx={{ py: 6, color: '#64748B' }}>
+                    No companies found. Click "Add Company" to create one.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredCompanies.map((company, index) => {
+                  const isLast = index === filteredCompanies.length - 1;
+                  const recordId = company._id || company.id || '';
+                  const slDisplay = company.slNo || (index + 1).toString().padStart(2, '0');
+                  const avatarInitial = company.avatarLetter || company.name.charAt(0).toUpperCase();
+
+                  return (
+                    <TableRow
+                      key={recordId || index}
+                      sx={{
+                        transition: 'background-color 0.15s ease',
+                        '&:hover': {
+                          backgroundColor: '#F8FAFC',
+                        },
+                      }}
+                    >
+                      {/* SL.NO */}
+                      <TableCell
+                        sx={{
+                          py: 1.6,
+                          px: 3,
+                          fontSize: '13.5px',
+                          color: '#475569',
+                          fontWeight: 600,
+                          borderBottom: isLast ? 'none' : '1px solid #F8FAFC',
+                        }}
+                      >
+                        {slDisplay}
+                      </TableCell>
+
+                      {/* Company Name */}
+                      <TableCell
+                        sx={{
+                          py: 1.6,
+                          px: 3,
+                          borderBottom: isLast ? 'none' : '1px solid #F8FAFC',
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                          <Box
+                            sx={{
+                              width: 32,
+                              height: 32,
+                              borderRadius: '50%',
+                              backgroundColor: company.avatarBg || '#DBEAFE',
+                              color: company.avatarColor || '#0B4DB7',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '13px',
+                              fontWeight: 700,
+                              flexShrink: 0,
+                            }}
+                          >
+                            {avatarInitial}
+                          </Box>
+                          <Typography
+                            sx={{
+                              fontSize: '14px',
+                              fontWeight: 700,
+                              color: '#0F172A',
+                              letterSpacing: '-0.01em',
+                            }}
+                          >
+                            {company.name}
+                          </Typography>
+                        </Box>
+                      </TableCell>
+
+                      {/* Address */}
+                      <TableCell
+                        sx={{
+                          py: 1.6,
+                          px: 3,
+                          fontSize: '13.5px',
+                          color: '#334155',
+                          fontWeight: 500,
+                          borderBottom: isLast ? 'none' : '1px solid #F8FAFC',
+                        }}
+                      >
+                        {company.address}
+                      </TableCell>
+
+                      {/* GSTIN */}
+                      <TableCell
+                        sx={{
+                          py: 1.6,
+                          px: 3,
+                          fontSize: '13.5px',
+                          color: '#334155',
+                          fontWeight: 600,
+                          borderBottom: isLast ? 'none' : '1px solid #F8FAFC',
+                        }}
+                      >
+                        {company.gstin}
+                      </TableCell>
+
+                      {/* Actions */}
+                      <TableCell
+                        align="right"
+                        sx={{
+                          py: 1.6,
+                          px: 3,
+                          borderBottom: isLast ? 'none' : '1px solid #F8FAFC',
+                        }}
+                      >
+                        <Tooltip title="Delete Company" arrow>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleDelete(recordId)}
+                            sx={{
+                              color: '#64748B',
+                              backgroundColor: '#F8FAFC',
+                              border: '1px solid #E2E8F0',
+                              borderRadius: '6px',
+                              p: 0.7,
+                              transition: 'all 0.15s ease',
+                              '&:hover': {
+                                color: '#DC2626',
+                                backgroundColor: '#FEF2F2',
+                                borderColor: '#FECACA',
+                              },
+                            }}
+                          >
+                            <DeleteOutlineRoundedIcon sx={{ fontSize: 16 }} />
+                          </IconButton>
+                        </Tooltip>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
             </TableBody>
           </Table>
         </TableContainer>
-
-        {/* Table Footer / Pagination */}
-        <Box
-          sx={{
-            display: 'flex',
-            flexDirection: { xs: 'column', sm: 'row' },
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            px: 3,
-            py: 2,
-            gap: 2,
-            borderTop: '1px solid #F8FAFC',
-          }}
-        >
-          {/* Entries Info */}
-          <Typography
-            sx={{
-              fontSize: '13px',
-              color: '#8E9AA8',
-              fontWeight: 400,
-            }}
-          >
-            Showing 1 to 4 of 1,248 entries
-          </Typography>
-
-          {/* Pagination Controls */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <IconButton
-              size="small"
-              disabled={activePage === 1}
-              onClick={() => setActivePage((p) => Math.max(1, p - 1))}
-              sx={{
-                p: 0.5,
-                color: '#8E9AA8',
-                '&.Mui-disabled': { color: '#CBD5E1' },
-              }}
-            >
-              <ChevronLeftRoundedIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-
-            {/* Page 1 (Active) */}
-            <Box
-              onClick={() => setActivePage(1)}
-              sx={{
-                width: 28,
-                height: 28,
-                borderRadius: '50%',
-                backgroundColor: activePage === 1 ? '#0B4DB7' : 'transparent',
-                color: activePage === 1 ? '#FFFFFF' : '#334155',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '13px',
-                fontWeight: activePage === 1 ? 700 : 500,
-                cursor: 'pointer',
-                transition: 'background-color 0.15s',
-                '&:hover': {
-                  backgroundColor: activePage === 1 ? '#0B4DB7' : '#F1F5F9',
-                },
-              }}
-            >
-              1
-            </Box>
-
-            {/* Page 2 */}
-            <Box
-              onClick={() => setActivePage(2)}
-              sx={{
-                width: 28,
-                height: 28,
-                borderRadius: '50%',
-                backgroundColor: activePage === 2 ? '#0B4DB7' : 'transparent',
-                color: activePage === 2 ? '#FFFFFF' : '#334155',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '13px',
-                fontWeight: activePage === 2 ? 700 : 500,
-                cursor: 'pointer',
-                transition: 'background-color 0.15s',
-                '&:hover': {
-                  backgroundColor: activePage === 2 ? '#0B4DB7' : '#F1F5F9',
-                },
-              }}
-            >
-              2
-            </Box>
-
-            {/* Page 3 */}
-            <Box
-              onClick={() => setActivePage(3)}
-              sx={{
-                width: 28,
-                height: 28,
-                borderRadius: '50%',
-                backgroundColor: activePage === 3 ? '#0B4DB7' : 'transparent',
-                color: activePage === 3 ? '#FFFFFF' : '#334155',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '13px',
-                fontWeight: activePage === 3 ? 700 : 500,
-                cursor: 'pointer',
-                transition: 'background-color 0.15s',
-                '&:hover': {
-                  backgroundColor: activePage === 3 ? '#0B4DB7' : '#F1F5F9',
-                },
-              }}
-            >
-              3
-            </Box>
-
-            {/* Ellipsis */}
-            <Typography
-              sx={{
-                fontSize: '13px',
-                color: '#8E9AA8',
-                px: 0.5,
-                userSelect: 'none',
-              }}
-            >
-              ...
-            </Typography>
-
-            <IconButton
-              size="small"
-              onClick={() => setActivePage((p) => Math.min(3, p + 1))}
-              sx={{
-                p: 0.5,
-                color: '#334155',
-                '&:hover': { backgroundColor: '#F1F5F9' },
-              }}
-            >
-              <ChevronRightRoundedIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-          </Box>
-        </Box>
       </Paper>
     </Box>
   );
 };
-
-export default CompaniesPage;

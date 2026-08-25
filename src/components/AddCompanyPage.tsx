@@ -5,10 +5,11 @@ import {
   Button,
   InputBase,
   Paper,
+  CircularProgress,
 } from '@mui/material';
 import DomainOutlinedIcon from '@mui/icons-material/DomainOutlined';
-import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded';
-import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
+import AddCircleOutlineRoundedIcon from '@mui/icons-material/AddCircleOutlineRounded';
+import { CompaniesApi } from '../services/api';
 
 interface AddCompanyPageProps {
   onCancel?: () => void;
@@ -26,6 +27,7 @@ export const AddCompanyPage: FC<AddCompanyPageProps> = ({
     gstNumber: '',
     registeredAddress: '',
   });
+  const [loading, setLoading] = useState(false);
 
   const handleChange = (field: string) => (
     e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -36,9 +38,30 @@ export const AddCompanyPage: FC<AddCompanyPageProps> = ({
     }));
   };
 
-  const handleSubmit = () => {
-    if (onSubmitSuccess) {
-      onSubmitSuccess();
+  const handleSubmit = async () => {
+    if (!formData.companyName.trim() || !formData.registeredAddress.trim()) {
+      alert('Please fill in required fields (Company Name and Registered Address)');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await CompaniesApi.create({
+        name: formData.companyName.trim(),
+        gstin: formData.gstNumber.trim() || 'N/A',
+        address: formData.registeredAddress.trim(),
+        avatarLetter: formData.companyName.trim().charAt(0).toUpperCase(),
+        avatarBg: '#DBEAFE',
+        avatarColor: '#0B4DB7',
+      });
+      if (onSubmitSuccess) {
+        onSubmitSuccess();
+      }
+    } catch (err) {
+      console.error('Failed to create company:', err);
+      alert('Error creating company. Please check your backend connection.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -65,7 +88,7 @@ export const AddCompanyPage: FC<AddCompanyPageProps> = ({
           onClick={onNavigateCompanies}
           sx={{
             fontSize: '13.5px',
-            fontWeight: 500,
+            fontWeight: 600,
             color: '#64748B',
             cursor: 'pointer',
             '&:hover': { color: '#0B4DB7' },
@@ -85,7 +108,7 @@ export const AddCompanyPage: FC<AddCompanyPageProps> = ({
         <Typography
           sx={{
             fontSize: '13.5px',
-            fontWeight: 600,
+            fontWeight: 700,
             color: '#0B4DB7',
           }}
         >
@@ -107,193 +130,151 @@ export const AddCompanyPage: FC<AddCompanyPageProps> = ({
         }}
       >
         <Box component="form" noValidate autoComplete="off">
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {/* Legal Company Name */}
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+              gap: 2.5,
+            }}
+          >
+            {/* Company Name Field */}
             <Box>
               <Typography
-                component="label"
                 sx={{
-                  display: 'block',
-                  fontSize: '11px',
+                  fontSize: '13px',
                   fontWeight: 700,
                   color: '#1E293B',
-                  letterSpacing: '0.05em',
-                  textTransform: 'uppercase',
                   mb: 1,
+                  letterSpacing: '-0.01em',
                 }}
               >
-                LEGAL COMPANY NAME *
+                Company Legal Name *
               </Typography>
               <Box
                 sx={{
-                  backgroundColor: '#F1F4FA',
-                  borderRadius: '8px',
-                  px: 2,
-                  height: '48px',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'space-between',
-                  transition: 'background-color 0.2s, box-shadow 0.2s',
+                  backgroundColor: '#F8FAFC',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: '8px',
+                  px: 1.5,
+                  height: '42px',
+                  transition: 'all 0.15s ease',
                   '&:focus-within': {
-                    backgroundColor: '#EDF1F8',
-                    boxShadow: '0 0 0 2px rgba(11, 77, 183, 0.15)',
+                    borderColor: '#0B4DB7',
+                    backgroundColor: '#FFFFFF',
+                    boxShadow: '0 0 0 3px rgba(11, 77, 183, 0.1)',
                   },
                 }}
               >
                 <InputBase
                   fullWidth
-                  placeholder="e.g. Acme Corporation Pvt. Ltd."
+                  placeholder="e.g. Acme Fireworks Pvt Ltd"
                   value={formData.companyName}
                   onChange={handleChange('companyName')}
                   sx={{
-                    fontSize: '14px',
-                    color: '#1E293B',
-                    '& input': {
-                      p: 0,
-                      '&::placeholder': {
-                        color: '#8E9AA8',
-                        opacity: 1,
-                      },
+                    fontSize: '13.5px',
+                    fontWeight: 500,
+                    color: '#0F172A',
+                    '& input::placeholder': {
+                      color: '#94A3B8',
+                      opacity: 1,
                     },
-                  }}
-                />
-                <DomainOutlinedIcon
-                  sx={{
-                    color: '#8E9AA8',
-                    fontSize: 20,
-                    ml: 1.5,
-                    flexShrink: 0,
                   }}
                 />
               </Box>
             </Box>
 
-            {/* GST Number */}
+            {/* GST Number Field */}
             <Box>
               <Typography
-                component="label"
                 sx={{
-                  display: 'block',
-                  fontSize: '11px',
+                  fontSize: '13px',
                   fontWeight: 700,
                   color: '#1E293B',
-                  letterSpacing: '0.05em',
-                  textTransform: 'uppercase',
                   mb: 1,
+                  letterSpacing: '-0.01em',
                 }}
               >
-                GST NUMBER *
+                GSTIN / Tax Registration Number
               </Typography>
               <Box
                 sx={{
-                  backgroundColor: '#F1F4FA',
-                  borderRadius: '8px',
-                  px: 2,
-                  height: '48px',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'space-between',
-                  transition: 'background-color 0.2s, box-shadow 0.2s',
+                  backgroundColor: '#F8FAFC',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: '8px',
+                  px: 1.5,
+                  height: '42px',
+                  transition: 'all 0.15s ease',
                   '&:focus-within': {
-                    backgroundColor: '#EDF1F8',
-                    boxShadow: '0 0 0 2px rgba(11, 77, 183, 0.15)',
+                    borderColor: '#0B4DB7',
+                    backgroundColor: '#FFFFFF',
+                    boxShadow: '0 0 0 3px rgba(11, 77, 183, 0.1)',
                   },
                 }}
               >
                 <InputBase
                   fullWidth
-                  placeholder="ENTER 15-DIGIT GSTIN"
+                  placeholder="e.g. 33AADCS5678Q1Z4"
                   value={formData.gstNumber}
                   onChange={handleChange('gstNumber')}
                   sx={{
                     fontSize: '13.5px',
-                    color: '#1E293B',
-                    '& input': {
-                      p: 0,
-                      textTransform: 'uppercase',
-                      '&::placeholder': {
-                        color: '#8E9AA8',
-                        opacity: 1,
-                      },
+                    fontWeight: 500,
+                    color: '#0F172A',
+                    '& input::placeholder': {
+                      color: '#94A3B8',
+                      opacity: 1,
                     },
-                  }}
-                />
-                <ReceiptLongRoundedIcon
-                  sx={{
-                    color: '#8E9AA8',
-                    fontSize: 20,
-                    ml: 1.5,
-                    flexShrink: 0,
                   }}
                 />
               </Box>
             </Box>
 
-            {/* Registered Address */}
-            <Box>
-              <Box
+            {/* Registered Address Field */}
+            <Box sx={{ gridColumn: { sm: 'span 2' } }}>
+              <Typography
                 sx={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  color: '#1E293B',
                   mb: 1,
+                  letterSpacing: '-0.01em',
                 }}
               >
-                <Typography
-                  component="label"
-                  sx={{
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    color: '#1E293B',
-                    letterSpacing: '0.05em',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  REGISTERED ADDRESS *
-                </Typography>
-                <Typography
-                  sx={{
-                    fontSize: '12px',
-                    fontWeight: 500,
-                    color: '#8E9AA8',
-                  }}
-                >
-                  Max 250 chars
-                </Typography>
-              </Box>
+                Registered Office Address *
+              </Typography>
               <Box
                 sx={{
-                  backgroundColor: '#F1F4FA',
-                  borderRadius: '8px',
-                  p: 2,
-                  minHeight: '140px',
                   display: 'flex',
-                  alignItems: 'flex-start',
-                  transition: 'background-color 0.2s, box-shadow 0.2s',
+                  alignItems: 'center',
+                  backgroundColor: '#F8FAFC',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: '8px',
+                  px: 1.5,
+                  height: '42px',
+                  transition: 'all 0.15s ease',
                   '&:focus-within': {
-                    backgroundColor: '#EDF1F8',
-                    boxShadow: '0 0 0 2px rgba(11, 77, 183, 0.15)',
+                    borderColor: '#0B4DB7',
+                    backgroundColor: '#FFFFFF',
+                    boxShadow: '0 0 0 3px rgba(11, 77, 183, 0.1)',
                   },
                 }}
               >
                 <InputBase
                   fullWidth
-                  multiline
-                  rows={5}
-                  inputProps={{ maxLength: 250 }}
-                  placeholder="Enter complete registered office address including state and pincode..."
+                  placeholder="e.g. 124 Industrial Area, Phase 1, Sivakasi, Tamil Nadu"
                   value={formData.registeredAddress}
                   onChange={handleChange('registeredAddress')}
                   sx={{
-                    fontSize: '14px',
-                    color: '#1E293B',
-                    '& textarea': {
-                      p: 0,
-                      resize: 'none',
-                      '&::placeholder': {
-                        color: '#8E9AA8',
-                        opacity: 1,
-                      },
+                    fontSize: '13.5px',
+                    fontWeight: 500,
+                    color: '#0F172A',
+                    '& input::placeholder': {
+                      color: '#94A3B8',
+                      opacity: 1,
                     },
                   }}
                 />
@@ -305,58 +286,59 @@ export const AddCompanyPage: FC<AddCompanyPageProps> = ({
           <Box
             sx={{
               display: 'flex',
-              justifyContent: 'flex-end',
               alignItems: 'center',
+              justifyContent: 'flex-end',
               gap: 1.5,
-              mt: 3.5,
+              mt: 4,
+              pt: 3,
+              borderTop: '1px solid #EEF2F6',
             }}
           >
-            {/* Cancel Button */}
             <Button
               variant="outlined"
               onClick={onCancel}
+              disabled={loading}
               sx={{
-                backgroundColor: '#FFFFFF',
-                borderColor: '#E2E8F0',
-                color: '#334155',
                 height: '40px',
-                px: 3,
+                px: 2.5,
                 borderRadius: '8px',
                 fontSize: '13.5px',
                 fontWeight: 600,
+                color: '#64748B',
+                borderColor: '#E2E8F0',
                 textTransform: 'none',
-                letterSpacing: '-0.01em',
                 '&:hover': {
-                  backgroundColor: '#F8FAFC',
                   borderColor: '#CBD5E1',
+                  backgroundColor: '#F8FAFC',
                 },
               }}
             >
               Cancel
             </Button>
 
-            {/* Click to Create Button */}
             <Button
               variant="contained"
               disableElevation
               onClick={handleSubmit}
-              endIcon={<ArrowForwardRoundedIcon sx={{ fontSize: '18px !important' }} />}
+              disabled={loading}
+              startIcon={
+                loading ? <CircularProgress size={16} color="inherit" /> : <AddCircleOutlineRoundedIcon sx={{ fontSize: 18 }} />
+              }
               sx={{
-                backgroundColor: '#0B4DB7',
-                color: '#FFFFFF',
                 height: '40px',
-                px: 2.8,
+                px: 3,
                 borderRadius: '8px',
                 fontSize: '13.5px',
-                fontWeight: 600,
+                fontWeight: 700,
+                backgroundColor: '#0B4DB7',
+                color: '#FFFFFF',
                 textTransform: 'none',
-                letterSpacing: '-0.01em',
                 '&:hover': {
-                  backgroundColor: '#09409B',
+                  backgroundColor: '#083B8D',
                 },
               }}
             >
-              Click to Create
+              {loading ? 'Creating...' : 'Register Company'}
             </Button>
           </Box>
         </Box>
@@ -364,5 +346,3 @@ export const AddCompanyPage: FC<AddCompanyPageProps> = ({
     </Box>
   );
 };
-
-export default AddCompanyPage;
