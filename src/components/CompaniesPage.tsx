@@ -14,9 +14,15 @@ import {
   IconButton,
   Tooltip,
   CircularProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
 } from '@mui/material';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
+import ModeEditOutlineRoundedIcon from '@mui/icons-material/ModeEditOutlineRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import { CompaniesApi } from '../services/api';
 
@@ -41,6 +47,16 @@ export const CompaniesPage: FC<CompaniesPageProps> = ({ onAddCompany }) => {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Edit Company Dialog State
+  const [openEditModal, setOpenEditModal] = useState(false);
+  const [editingCompany, setEditingCompany] = useState<Company | null>(null);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    gstin: '',
+    address: '',
+  });
+  const [editLoading, setEditLoading] = useState(false);
+
   const fetchCompanies = async () => {
     try {
       setLoading(true);
@@ -57,8 +73,46 @@ export const CompaniesPage: FC<CompaniesPageProps> = ({ onAddCompany }) => {
     fetchCompanies();
   }, []);
 
+  const handleOpenEdit = (company: Company) => {
+    setEditingCompany(company);
+    setEditFormData({
+      name: company.name || '',
+      gstin: company.gstin || '',
+      address: company.address || '',
+    });
+    setOpenEditModal(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingCompany) return;
+    const id = editingCompany._id || editingCompany.id;
+    if (!id) return;
+
+    if (!editFormData.name.trim() || !editFormData.address.trim()) {
+      alert('Please fill in Company Name and Address');
+      return;
+    }
+
+    try {
+      setEditLoading(true);
+      await CompaniesApi.update(id, {
+        name: editFormData.name.trim(),
+        gstin: editFormData.gstin.trim() || 'N/A',
+        address: editFormData.address.trim(),
+        avatarLetter: editFormData.name.trim().charAt(0).toUpperCase(),
+      });
+      setOpenEditModal(false);
+      fetchCompanies();
+    } catch (err) {
+      console.error('Failed to update company:', err);
+      alert('Error updating company');
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this company?')) return;
+    if (!window.confirm('Are you sure you want to delete this company? This will also delete all associated particular bills and account ledger records for this company.')) return;
     try {
       await CompaniesApi.delete(id);
       setCompanies((prev) => prev.filter((c) => (c._id || c.id) !== id));
@@ -267,7 +321,7 @@ export const CompaniesPage: FC<CompaniesPageProps> = ({ onAddCompany }) => {
                     color: '#475569',
                     letterSpacing: '0.04em',
                     borderBottom: '1px solid #EEF2F6',
-                    width: '100px',
+                    width: '120px',
                   }}
                 >
                   ACTIONS
@@ -386,7 +440,7 @@ export const CompaniesPage: FC<CompaniesPageProps> = ({ onAddCompany }) => {
                         {company.gstin}
                       </TableCell>
 
-                      {/* Actions */}
+                      {/* Actions (Edit & Delete) */}
                       <TableCell
                         align="right"
                         sx={{
@@ -395,27 +449,53 @@ export const CompaniesPage: FC<CompaniesPageProps> = ({ onAddCompany }) => {
                           borderBottom: isLast ? 'none' : '1px solid #F8FAFC',
                         }}
                       >
-                        <Tooltip title="Delete Company" arrow>
-                          <IconButton
-                            size="small"
-                            onClick={() => handleDelete(recordId)}
-                            sx={{
-                              color: '#64748B',
-                              backgroundColor: '#F8FAFC',
-                              border: '1px solid #E2E8F0',
-                              borderRadius: '6px',
-                              p: 0.7,
-                              transition: 'all 0.15s ease',
-                              '&:hover': {
-                                color: '#DC2626',
-                                backgroundColor: '#FEF2F2',
-                                borderColor: '#FECACA',
-                              },
-                            }}
-                          >
-                            <DeleteOutlineRoundedIcon sx={{ fontSize: 16 }} />
-                          </IconButton>
-                        </Tooltip>
+                        <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.8 }}>
+                          {/* Edit Company Button */}
+                          <Tooltip title="Edit Company" arrow>
+                            <IconButton
+                              size="small"
+                              onClick={() => handleOpenEdit(company)}
+                              sx={{
+                                color: '#64748B',
+                                backgroundColor: '#F8FAFC',
+                                border: '1px solid #E2E8F0',
+                                borderRadius: '6px',
+                                p: 0.7,
+                                transition: 'all 0.15s ease',
+                                '&:hover': {
+                                  color: '#0B4DB7',
+                                  backgroundColor: '#EFF6FF',
+                                  borderColor: '#BFDBFE',
+                                },
+                              }}
+                            >
+                              <ModeEditOutlineRoundedIcon sx={{ fontSize: 16 }} />
+                            </IconButton>
+                          </Tooltip>
+
+                          {/* Delete Company Button */}
+                          <Tooltip title="Delete Company" arrow>
+                            <IconButton
+                              size="small"
+                              onClick={() => handleDelete(recordId)}
+                              sx={{
+                                color: '#64748B',
+                                backgroundColor: '#F8FAFC',
+                                border: '1px solid #E2E8F0',
+                                borderRadius: '6px',
+                                p: 0.7,
+                                transition: 'all 0.15s ease',
+                                '&:hover': {
+                                  color: '#DC2626',
+                                  backgroundColor: '#FEF2F2',
+                                  borderColor: '#FECACA',
+                                },
+                              }}
+                            >
+                              <DeleteOutlineRoundedIcon sx={{ fontSize: 16 }} />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
                       </TableCell>
                     </TableRow>
                   );
@@ -425,6 +505,99 @@ export const CompaniesPage: FC<CompaniesPageProps> = ({ onAddCompany }) => {
           </Table>
         </TableContainer>
       </Paper>
+
+      {/* Edit Company Dialog Modal */}
+      <Dialog
+        open={openEditModal}
+        onClose={() => setOpenEditModal(false)}
+        maxWidth="sm"
+        fullWidth
+        slotProps={{
+          paper: {
+            sx: {
+              borderRadius: '12px',
+              p: 1,
+            },
+          },
+        }}
+      >
+        <DialogTitle sx={{ fontSize: '18px', fontWeight: 700, color: '#0F172A', pb: 1 }}>
+          Edit Company Details
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            <Box>
+              <Typography sx={{ fontSize: '13px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
+                Company Legal Name *
+              </Typography>
+              <TextField
+                fullWidth
+                size="small"
+                value={editFormData.name}
+                onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                slotProps={{
+                  input: { sx: { fontSize: '13.5px', fontWeight: 500, borderRadius: '6px' } },
+                }}
+              />
+            </Box>
+
+            <Box>
+              <Typography sx={{ fontSize: '13px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
+                GSTIN / Tax Registration Number
+              </Typography>
+              <TextField
+                fullWidth
+                size="small"
+                value={editFormData.gstin}
+                onChange={(e) => setEditFormData({ ...editFormData, gstin: e.target.value })}
+                slotProps={{
+                  input: { sx: { fontSize: '13.5px', fontWeight: 500, borderRadius: '6px' } },
+                }}
+              />
+            </Box>
+
+            <Box>
+              <Typography sx={{ fontSize: '13px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
+                Registered Office Address *
+              </Typography>
+              <TextField
+                fullWidth
+                size="small"
+                value={editFormData.address}
+                onChange={(e) => setEditFormData({ ...editFormData, address: e.target.value })}
+                slotProps={{
+                  input: { sx: { fontSize: '13.5px', fontWeight: 500, borderRadius: '6px' } },
+                }}
+              />
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, pt: 1 }}>
+          <Button
+            onClick={() => setOpenEditModal(false)}
+            sx={{ color: '#64748B', fontWeight: 600, textTransform: 'none' }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            disableElevation
+            onClick={handleSaveEdit}
+            disabled={editLoading}
+            sx={{
+              backgroundColor: '#0B4DB7',
+              color: '#FFFFFF',
+              fontWeight: 700,
+              textTransform: 'none',
+              px: 2.5,
+              borderRadius: '6px',
+              '&:hover': { backgroundColor: '#083B8D' },
+            }}
+          >
+            {editLoading ? 'Saving...' : 'Save Changes'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

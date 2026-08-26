@@ -1,6 +1,8 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IAccountLedger extends Document {
+  particularId?: string;
+  billNo?: string;
   customerName: string;
   date: string;
   companyName: string;
@@ -14,6 +16,8 @@ export interface IAccountLedger extends Document {
 
 const AccountLedgerSchema: Schema = new Schema(
   {
+    particularId: { type: String, trim: true },
+    billNo: { type: String, trim: true },
     customerName: { type: String, required: true, trim: true },
     date: { type: String, required: true },
     companyName: { type: String, required: true, trim: true },

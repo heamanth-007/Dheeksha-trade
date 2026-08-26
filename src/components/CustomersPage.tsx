@@ -117,10 +117,14 @@ export const CustomersPage: FC<CustomersPageProps> = ({ onAddNew, onSelectCustom
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this customer?')) return;
+    if (!window.confirm('Are you sure you want to delete this customer? This will also delete all associated particular bills and account ledger records.')) return;
     try {
+      const deletedCust = customers.find((c) => (c._id || c.id) === id);
       await CustomersApi.delete(id);
       setCustomers((prev) => prev.filter((c) => (c._id || c.id) !== id));
+      if (deletedCust && localStorage.getItem('dheeksha_active_customer') === deletedCust.name) {
+        localStorage.removeItem('dheeksha_active_customer');
+      }
     } catch (err) {
       console.error('Failed to delete customer:', err);
       alert('Error deleting customer');

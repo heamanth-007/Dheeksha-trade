@@ -1,4 +1,4 @@
-import { useState, useEffect, type FC } from 'react';
+import { useState, useEffect, useMemo, type FC } from 'react';
 import {
   Box,
   Typography,
@@ -17,6 +17,7 @@ import {
   IconButton,
   Tooltip,
   CircularProgress,
+  Chip,
   type SelectChangeEvent,
 } from '@mui/material';
 import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
@@ -25,6 +26,8 @@ import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined
 import PrintOutlinedIcon from '@mui/icons-material/PrintOutlined';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
+import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded';
+import AccountBalanceWalletRoundedIcon from '@mui/icons-material/AccountBalanceWalletRounded';
 import {
   CustomersApi,
   CompaniesApi,
@@ -32,6 +35,9 @@ import {
   ParticularsApi,
   AccountsApi,
 } from '../services/api';
+import { BillPrintModal } from './BillPrintModal';
+import type { BillPrintData } from './BillPrintTemplate';
+import { printBillDirectly } from '../utils/printUtils';
 
 export type ParticularSubTab =
   | 'Select Customer'
@@ -61,7 +67,7 @@ interface ParticularsPageProps {
   initialCustomerName?: string;
 }
 
-export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName = 'R A TRADERS 2025' }) => {
+export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName }) => {
   const [activeSubTab, setActiveSubTab] = useState<ParticularSubTab>('Select Customer');
 
   // Live Dropdown options
@@ -69,9 +75,22 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
   const [companyOptions, setCompanyOptions] = useState<{ id: string; name: string }[]>([]);
   const [productOptions, setProductOptions] = useState<{ id: string; name: string }[]>([]);
 
-  // Selected active customer
+  // Persistent Selected Customer for Creation & Filter
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
-  const [currentCustomerName, setCurrentCustomerName] = useState<string>(initialCustomerName);
+  const [currentCustomerName, setCurrentCustomerName] = useState<string>(() => {
+    return (
+      localStorage.getItem('dheeksha_active_customer') ||
+      initialCustomerName ||
+      ''
+    );
+  });
+  const [filterCustomer, setFilterCustomer] = useState<string>(() => {
+    return (
+      localStorage.getItem('dheeksha_active_customer') ||
+      initialCustomerName ||
+      ''
+    );
+  });
 
   // Subtab 2: Create Particular Form State
   const [caseCount, setCaseCount] = useState<string>('0');
@@ -103,6 +122,7 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
   const [particularLoading, setParticularLoading] = useState(false);
 
   // Subtab 5: Add Credit Form State
+  const [addCreditCustomerName, setAddCreditCustomerName] = useState<string>('');
   const [addCreditCompanyName, setAddCreditCompanyName] = useState<string>('');
   const [creditAmount, setCreditAmount] = useState<string>('');
   const [creditDate, setCreditDate] = useState<string>(() => {
@@ -111,7 +131,31 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
   });
   const [creditLoading, setCreditLoading] = useState(false);
 
-  // Load Initial Options
+  // Bill Print Modal State
+  const [selectedBillForPrint, setSelectedBillForPrint] = useState<BillPrintData | null>(null);
+  const [printModalOpen, setPrintModalOpen] = useState(false);
+
+  // Automatically calculate total case count from added product rows
+  useEffect(() => {
+    if (productRows.length > 0) {
+      const totalCases = productRows.reduce((acc, row) => acc + (parseFloat(row.quantity) || 0), 0);
+      setCaseCount(String(totalCases));
+    } else {
+      setCaseCount('0');
+    }
+  }, [productRows]);
+
+  // Update customer when prop changes
+  useEffect(() => {
+    if (initialCustomerName) {
+      setCurrentCustomerName(initialCustomerName);
+      setFilterCustomer(initialCustomerName);
+      setAddCreditCustomerName(initialCustomerName);
+      localStorage.setItem('dheeksha_active_customer', initialCustomerName);
+    }
+  }, [initialCustomerName]);
+
+  // Load Dropdown Options
   useEffect(() => {
     const loadOptions = async () => {
       try {
@@ -124,36 +168,60 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
         if (custRes && custRes.length > 0) {
           const mapped = custRes.map((c: any) => ({ id: c._id || c.id, name: c.name }));
           setCustomerOptions(mapped);
-          setSelectedCustomerId(mapped[0].id);
-          if (!initialCustomerName || initialCustomerName === 'R A TRADERS 2025') {
+
+          const existing = mapped.find((c: any) => c.name === currentCustomerName);
+          if (existing) {
+            setSelectedCustomerId(existing.id);
+            setAddCreditCustomerName(existing.name);
+            setFilterCustomer(existing.name);
+          } else {
+            setSelectedCustomerId(mapped[0].id);
             setCurrentCustomerName(mapped[0].name);
+            setAddCreditCustomerName(mapped[0].name);
+            setFilterCustomer(mapped[0].name);
+            localStorage.setItem('dheeksha_active_customer', mapped[0].name);
           }
         }
 
         if (compRes && compRes.length > 0) {
           const mapped = compRes.map((c: any) => ({ id: c._id || c.id, name: c.name }));
           setCompanyOptions(mapped);
-          setCompany(mapped[0].name);
-          setAddCreditCompanyName(mapped[0].name);
+          if (!company) setCompany(mapped[0].name);
+          if (!addCreditCompanyName) setAddCreditCompanyName(mapped[0].name);
         }
 
         if (prodRes && prodRes.length > 0) {
           const mapped = prodRes.map((p: any) => ({ id: p._id || p.id, name: p.name }));
           setProductOptions(mapped);
-          setSelectedProduct(mapped[0].name);
+          if (!selectedProduct) setSelectedProduct(mapped[0].name);
         }
+
+        // Fetch Next Bill Number Automatically
+        fetchNextBillNo();
       } catch (err) {
-        console.error('Error loading options:', err);
+        console.error('Error loading dropdown options:', err);
       }
     };
     loadOptions();
-  }, [initialCustomerName]);
+  }, []);
 
-  // Load Subtab 3 data when active
-  const fetchAccounts = async () => {
+  const fetchNextBillNo = async () => {
+    try {
+      const res: any = await ParticularsApi.getNextBillNo();
+      if (res && res.nextBillNo) {
+        setBillNo(res.nextBillNo);
+      }
+    } catch (err) {
+      console.error('Failed to load next bill no:', err);
+    }
+  };
+
+  // Fetch Accounts
+  const fetchAccounts = async (targetCustomer?: string) => {
     try {
       setAccountLoading(true);
-      const data = await AccountsApi.getAll(currentCustomerName);
+      const cust = targetCustomer !== undefined ? targetCustomer : (filterCustomer || currentCustomerName);
+      const data = await AccountsApi.getAll(cust && cust !== 'ALL' ? cust : undefined);
       setAccountDetails(data || []);
     } catch (err) {
       console.error('Failed to load accounts:', err);
@@ -162,11 +230,12 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
     }
   };
 
-  // Load Subtab 4 data when active
-  const fetchParticulars = async () => {
+  // Fetch Particulars
+  const fetchParticulars = async (targetCustomer?: string) => {
     try {
       setParticularLoading(true);
-      const data = await ParticularsApi.getAll(currentCustomerName);
+      const cust = targetCustomer !== undefined ? targetCustomer : (filterCustomer || currentCustomerName);
+      const data = await ParticularsApi.getAll(cust && cust !== 'ALL' ? cust : undefined);
       setParticularDetails(data || []);
     } catch (err) {
       console.error('Failed to load particulars:', err);
@@ -176,20 +245,52 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
   };
 
   useEffect(() => {
+    const custToFetch = filterCustomer || currentCustomerName;
     if (activeSubTab === 'Account Details') {
-      fetchAccounts();
+      fetchAccounts(custToFetch);
     } else if (activeSubTab === 'Particular Details') {
-      fetchParticulars();
+      fetchParticulars(custToFetch);
     }
-  }, [activeSubTab, currentCustomerName]);
+  }, [activeSubTab, filterCustomer, currentCustomerName]);
 
-  // Handle Select Customer View
+  // Overall totals
+  const overallTotals = useMemo(() => {
+    let totalDebit = 0;
+    let totalCredit = 0;
+    accountDetails.forEach((row) => {
+      totalDebit += parseFloat(String(row.debit || '0').replace(/,/g, '')) || 0;
+      totalCredit += parseFloat(String(row.credit || '0').replace(/,/g, '')) || 0;
+    });
+    return {
+      totalDebit,
+      totalCredit,
+      netBalance: totalCredit - totalDebit,
+    };
+  }, [accountDetails]);
+
+  // Subtab 1: Select Customer
   const handleCustomerChange = (event: SelectChangeEvent) => {
     const custId = event.target.value;
     setSelectedCustomerId(custId);
     const found = customerOptions.find((c) => c.id === custId);
     if (found) {
       setCurrentCustomerName(found.name);
+      setFilterCustomer(found.name);
+      setAddCreditCustomerName(found.name);
+      localStorage.setItem('dheeksha_active_customer', found.name);
+    }
+  };
+
+  const handleFilterCustomerChange = (newCust: string) => {
+    setFilterCustomer(newCust);
+    if (newCust && newCust !== 'ALL') {
+      setCurrentCustomerName(newCust);
+      setAddCreditCustomerName(newCust);
+      const found = customerOptions.find((c) => c.name === newCust);
+      if (found) {
+        setSelectedCustomerId(found.id);
+      }
+      localStorage.setItem('dheeksha_active_customer', newCust);
     }
   };
 
@@ -197,19 +298,23 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
     setActiveSubTab('Create Particular');
   };
 
-  // Subtab 2: Product Row Addition
+  // Subtab 2: Product Line Addition
   const handleAddProductRow = () => {
     if (!selectedProduct || !quantity || !rate) {
-      alert('Please select product, quantity, and rate');
+      alert('Please select Product, enter Case and Rate');
       return;
     }
-    const lineAmt = (parseFloat(quantity) * parseFloat(rate)).toFixed(2);
+    const caseVal = parseFloat(quantity) || 0;
+    const piecesPerCase = parseFloat(pkt) || 1;
+    const totalPieces = caseVal * piecesPerCase;
+    const lineAmt = (totalPieces * (parseFloat(rate) || 0)).toFixed(2);
+
     const newRow: ProductRowItem = {
       id: Date.now().toString(),
       particular: selectedProduct,
       quantity,
       rate,
-      pktUnit: pkt || '-',
+      pktUnit: pkt ? pkt : '-',
       amount: lineAmt,
     };
     setProductRows((prev) => [...prev, newRow]);
@@ -218,40 +323,117 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
     setPkt('');
   };
 
-  const subtotalAmount = productRows.reduce((acc, row) => acc + (parseFloat(row.amount) || 0), 0);
-  const totalAmount = subtotalAmount.toFixed(2);
+  // Subtotal (Sum of all products)
+  const subtotalAmount = useMemo(() => {
+    return productRows.reduce((acc, row) => acc + (parseFloat(row.amount) || 0), 0);
+  }, [productRows]);
 
-  // Subtab 2: Submit Particular
-  const handleCreateParticular = async () => {
-    if (!billNo.trim()) {
-      alert('Please enter Bill No');
-      return;
+  // Discount Calculation (Supports % like 5% or flat rupees like 500)
+  const discountVal = useMemo(() => {
+    if (!discount) return 0;
+    const cleanDisc = String(discount).trim();
+    const num = parseFloat(cleanDisc) || 0;
+    if (num <= 0) return 0;
+    if (cleanDisc.endsWith('%') || num <= 100) {
+      return (subtotalAmount * num) / 100;
     }
+    return num;
+  }, [discount, subtotalAmount]);
 
+  // Packing Calculation (Supports % like 2% or flat rupees)
+  const packingVal = useMemo(() => {
+    if (!packing) return 0;
+    const cleanPack = String(packing).trim();
+    const num = parseFloat(cleanPack) || 0;
+    if (num <= 0) return 0;
+    if (cleanPack.endsWith('%') || (num <= 100 && !cleanPack.includes('.'))) {
+      return (subtotalAmount * num) / 100;
+    }
+    return num;
+  }, [packing, subtotalAmount]);
+
+  // Tax Calculation (Supports % like 5%, 18% or flat rupees)
+  const taxVal = useMemo(() => {
+    if (!tax) return 0;
+    const cleanTax = String(tax).trim();
+    const num = parseFloat(cleanTax) || 0;
+    if (num <= 0) return 0;
+    const baseForTax = Math.max(0, subtotalAmount - discountVal + packingVal);
+    if (cleanTax.endsWith('%') || num <= 100) {
+      return (baseForTax * num) / 100;
+    }
+    return num;
+  }, [tax, subtotalAmount, discountVal, packingVal]);
+
+  // Final Net Total Amount
+  const finalTotalAmount = useMemo(() => {
+    const net = Math.max(0, subtotalAmount - discountVal + packingVal + taxVal);
+    return net.toFixed(2);
+  }, [subtotalAmount, discountVal, packingVal, taxVal]);
+
+  // Subtab 2: Submit Particular Bill
+  const handleCreateParticular = async () => {
     try {
       setCreateLoading(true);
-      await ParticularsApi.create({
-        customerName: currentCustomerName,
+      const created = await ParticularsApi.create({
+        customerName: currentCustomerName || 'General',
         caseCount: caseCount || '0',
-        companyName: company || 'General',
+        companyName: company || (companyOptions[0]?.name ?? 'General'),
         discount: discount || '0',
-        transport: transport || 'General',
+        transport: transport || '-',
         packing: packing || '0',
         billNo: billNo.trim(),
         tax: tax || '0',
-        amount: totalAmount,
-        total: totalAmount,
+        amount: subtotalAmount.toFixed(2),
+        total: finalTotalAmount,
         date: date,
         products: productRows,
       });
 
-      alert('Particular created successfully!');
+      const assignedBillNo = created?.billNo || billNo || '';
+      const createdBillData: BillPrintData = {
+        billNo: assignedBillNo,
+        customerName: currentCustomerName || 'General',
+        companyName: company || (companyOptions[0]?.name ?? 'General'),
+        preparedBy: 'S.Nagaraj',
+        phone: '+91 98765 43210',
+        email: 'info@dheekshatrade.com',
+        website: 'www.dheekshatrade.com',
+        transport: transport && transport !== '-' ? transport : 'VARMA TRANSPORT',
+        caseCount: caseCount || '0',
+        date: date,
+        products: productRows.map((p) => ({
+          particular: p.particular,
+          quantity: p.quantity,
+          rate: p.rate,
+          pktUnit: p.pktUnit,
+          amount: p.amount,
+        })),
+        amount: subtotalAmount.toFixed(2),
+        discount: discount || '0',
+        packing: packing || '0',
+        tax: tax || '0',
+        total: finalTotalAmount,
+      };
+
+      alert(`Particular bill #${assignedBillNo} for ${company || 'General'} created successfully!`);
       setProductRows([]);
-      setBillNo('');
+      setCaseCount('0');
+      setDiscount('');
+      setTransport('');
+      setPacking('');
+      setTax('');
+      fetchNextBillNo();
+      fetchAccounts(filterCustomer);
+      fetchParticulars(filterCustomer);
       setActiveSubTab('Particular Details');
+
+      // Open the print invoice modal automatically
+      setSelectedBillForPrint(createdBillData);
+      setPrintModalOpen(true);
     } catch (err) {
       console.error('Failed to create particular:', err);
-      alert('Error creating particular');
+      alert('Error creating particular bill');
     } finally {
       setCreateLoading(false);
     }
@@ -267,14 +449,16 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
     try {
       setCreditLoading(true);
       await AccountsApi.addCredit({
-        customerName: currentCustomerName,
-        companyName: addCreditCompanyName || 'General',
+        customerName: addCreditCustomerName || currentCustomerName || (customerOptions[0]?.name ?? 'General'),
+        companyName: addCreditCompanyName || (companyOptions[0]?.name ?? 'General'),
         creditAmount: creditAmount.trim(),
         date: creditDate,
       });
 
       alert('Credit added successfully!');
       setCreditAmount('');
+      fetchAccounts(filterCustomer);
+      fetchParticulars(filterCustomer);
       setActiveSubTab('Account Details');
     } catch (err) {
       console.error('Failed to add credit:', err);
@@ -286,10 +470,23 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
 
   // Delete handlers
   const handleDeleteAccountEntry = async (id: string) => {
-    if (!window.confirm('Delete this account transaction?')) return;
+    if (!window.confirm('Delete this account ledger transaction?')) return;
     try {
+      const entryToDelete = accountDetails.find((a) => (a._id || a.id) === id);
       await AccountsApi.delete(id);
       setAccountDetails((prev) => prev.filter((a) => (a._id || a.id) !== id));
+      if (entryToDelete) {
+        setParticularDetails((prev) =>
+          prev.filter((p) => {
+            const pId = p._id || p.id;
+            if (entryToDelete.particularId && (pId === entryToDelete.particularId || p._id === entryToDelete.particularId)) return false;
+            if (entryToDelete.billNo && p.billNo === entryToDelete.billNo) return false;
+            return true;
+          })
+        );
+      }
+      fetchAccounts(filterCustomer);
+      fetchParticulars(filterCustomer);
     } catch (err) {
       console.error('Failed to delete account entry:', err);
     }
@@ -298,15 +495,114 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
   const handleDeleteParticular = async (id: string) => {
     if (!window.confirm('Delete this particular bill?')) return;
     try {
+      const billToDelete = particularDetails.find((p) => (p._id || p.id) === id);
       await ParticularsApi.delete(id);
       setParticularDetails((prev) => prev.filter((p) => (p._id || p.id) !== id));
+      setAccountDetails((prev) =>
+        prev.filter((a) => {
+          if (a.particularId && (a.particularId === id || (billToDelete && a.particularId === (billToDelete._id || billToDelete.id)))) {
+            return false;
+          }
+          if (billToDelete?.billNo && a.billNo && a.billNo === billToDelete.billNo) {
+            return false;
+          }
+          return true;
+        })
+      );
+      fetchAccounts(filterCustomer);
+      fetchParticulars(filterCustomer);
     } catch (err) {
-      console.error('Failed to delete particular:', err);
+      console.error('Failed to delete particular bill:', err);
     }
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handleOpenBillPrint = (billData: any, autoTrigger = false) => {
+    const formattedBill: BillPrintData = {
+      billNo: billData.billNo || '',
+      date: billData.date || '',
+      customerName: billData.customerName || currentCustomerName || '',
+      companyName: billData.companyName || company || '',
+      preparedBy: billData.preparedBy || 'S.Nagaraj',
+      phone: '+91 98765 43210',
+      email: 'info@dheekshatrade.com',
+      website: 'www.dheekshatrade.com',
+      transport: billData.transport && billData.transport !== '-' ? billData.transport : 'VARMA TRANSPORT',
+      caseCount: billData.caseCount || billData.cases || (billData.products ? billData.products.reduce((acc: number, p: any) => acc + (parseFloat(p.quantity) || 0), 0) : 0),
+      products: (billData.products || []).map((p: any) => ({
+        particular: p.particular || p.particularName || p.name || '',
+        quantity: p.quantity || '',
+        rate: p.rate || '',
+        pktUnit: p.pktUnit || p.pkt || '',
+        amount: p.amount || '',
+      })),
+      amount: billData.amount || billData.total || '0.00',
+      discount: billData.discount !== undefined && billData.discount !== null ? String(billData.discount) : '0',
+      packing: billData.packing !== undefined && billData.packing !== null ? String(billData.packing) : '0',
+      tax: billData.tax !== undefined && billData.tax !== null ? String(billData.tax) : '0',
+      total: billData.total || billData.amount || '0.00',
+    };
+
+    setSelectedBillForPrint(formattedBill);
+
+    if (autoTrigger) {
+      printBillDirectly(formattedBill);
+    } else {
+      setPrintModalOpen(true);
+    }
+  };
+
+  const handlePreviewCurrentBill = () => {
+    if (productRows.length === 0) {
+      alert('Please add at least one product to preview the bill.');
+      return;
+    }
+    handleOpenBillPrint({
+      billNo: billNo || 'PREVIEW',
+      date: date,
+      customerName: currentCustomerName,
+      companyName: company,
+      transport: transport || 'VARMA TRANSPORT',
+      caseCount: caseCount || '0',
+      products: productRows,
+      amount: subtotalAmount.toFixed(2),
+      discount: discount || '0',
+      packing: packing || '0',
+      tax: tax || '0',
+      total: finalTotalAmount,
+    }, false);
+  };
+
+  const handlePrint = async () => {
+    try {
+      const cust = filterCustomer || currentCustomerName;
+      // Fetch latest particular bills for the customer
+      const parts = await ParticularsApi.getAll(cust && cust !== 'ALL' ? cust : undefined);
+      if (parts && parts.length > 0) {
+        handleOpenBillPrint(parts[0], true);
+      } else if (accountDetails.length > 0) {
+        handleOpenBillPrint({
+          billNo: 'STATEMENT',
+          date: new Date().toLocaleDateString('en-GB').replace(/\//g, '-'),
+          customerName: cust || 'Customer',
+          companyName: accountDetails[0]?.companyName || 'General',
+          transport: 'VARMA TRANSPORT',
+          caseCount: '0',
+          products: accountDetails.map((acc) => ({
+            particular: `${acc.companyName} (${acc.date})`,
+            quantity: '1',
+            rate: acc.debit || acc.credit || '0',
+            pktUnit: acc.credit > 0 ? 'CR' : 'DR',
+            amount: acc.debit || acc.credit || '0',
+          })),
+          amount: overallTotals.totalDebit.toFixed(2),
+          total: overallTotals.totalDebit.toFixed(2),
+        }, true);
+      } else {
+        alert('No bill records found to print.');
+      }
+    } catch (err) {
+      console.error('Failed to print:', err);
+    }
   };
 
   return (
@@ -560,7 +856,7 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
                   letterSpacing: '-0.01em',
                 }}
               >
-                Create Particular - {currentCustomerName}
+                Create Particular - {currentCustomerName || 'Customer'}
               </Typography>
             </Box>
 
@@ -570,27 +866,36 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
                   <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
                     Customer
                   </Typography>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    value={currentCustomerName}
-                    slotProps={{
-                      input: {
-                        readOnly: true,
-                        sx: {
-                          fontSize: '13px',
-                          fontWeight: 600,
-                          height: '36px',
-                          backgroundColor: '#F8FAFC',
-                          borderRadius: '6px',
-                          color: '#0F172A',
-                          '& .MuiOutlinedInput-notchedOutline': {
-                            borderColor: '#CBD5E1',
-                          },
+                  <FormControl fullWidth size="small">
+                    <Select
+                      value={currentCustomerName}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setCurrentCustomerName(val);
+                        localStorage.setItem('dheeksha_active_customer', val);
+                        const found = customerOptions.find((c) => c.name === val);
+                        if (found) setSelectedCustomerId(found.id);
+                      }}
+                      IconComponent={KeyboardArrowDownRoundedIcon}
+                      sx={{
+                        height: '36px',
+                        borderRadius: '6px',
+                        backgroundColor: '#FFFFFF',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        color: '#0F172A',
+                        '& .MuiOutlinedInput-notchedOutline': {
+                          borderColor: '#CBD5E1',
                         },
-                      },
-                    }}
-                  />
+                      }}
+                    >
+                      {customerOptions.map((opt) => (
+                        <MenuItem key={opt.id} value={opt.name} sx={{ fontSize: '13px', fontWeight: 600 }}>
+                          {opt.name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
                 </Box>
                 <Box>
                   <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
@@ -733,24 +1038,25 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
               <Box sx={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 1.5 }}>
                 <Box>
                   <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
-                    Bill No *
+                    Bill No (Auto)
                   </Typography>
                   <TextField
                     fullWidth
                     size="small"
-                    placeholder="e.g. 0602"
+                    placeholder="Auto-generated"
                     value={billNo}
                     onChange={(e) => setBillNo(e.target.value)}
                     slotProps={{
                       input: {
                         sx: {
                           fontSize: '13px',
-                          fontWeight: 600,
+                          fontWeight: 700,
+                          color: '#0B4DB7',
                           height: '36px',
-                          backgroundColor: '#FFFFFF',
+                          backgroundColor: '#F0F9FF',
                           borderRadius: '6px',
                           '& .MuiOutlinedInput-notchedOutline': {
-                            borderColor: '#CBD5E1',
+                            borderColor: '#BAE6FD',
                           },
                         },
                       },
@@ -811,7 +1117,7 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
                       textAlign: 'right',
                     }}
                   >
-                    {totalAmount}
+                    {subtotalAmount.toFixed(2)}
                   </Box>
                 </Box>
                 <Box>
@@ -826,11 +1132,11 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
                       py: 0.7,
                       fontSize: '13px',
                       fontWeight: 700,
-                      color: '#0F172A',
+                      color: '#0B4DB7',
                       textAlign: 'right',
                     }}
                   >
-                    {totalAmount}
+                    {finalTotalAmount}
                   </Box>
                 </Box>
               </Box>
@@ -865,7 +1171,28 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
                     }}
                   />
                 </Box>
-                <Box sx={{ display: 'flex', alignItems: 'flex-end' }}>
+                <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 1 }}>
+                  <Button
+                    variant="outlined"
+                    onClick={handlePreviewCurrentBill}
+                    startIcon={<VisibilityRoundedIcon sx={{ fontSize: 16 }} />}
+                    sx={{
+                      height: '36px',
+                      fontSize: '12.5px',
+                      fontWeight: 700,
+                      textTransform: 'none',
+                      borderRadius: '6px',
+                      borderColor: '#0284C7',
+                      color: '#0284C7',
+                      px: 1.5,
+                      '&:hover': {
+                        backgroundColor: '#F0F9FF',
+                        borderColor: '#0369A1',
+                      },
+                    }}
+                  >
+                    Preview
+                  </Button>
                   <Button
                     variant="contained"
                     disableElevation
@@ -963,7 +1290,7 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
 
               <TextField
                 size="small"
-                placeholder="Quantity"
+                placeholder="Case"
                 type="number"
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
@@ -999,7 +1326,8 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
 
               <TextField
                 size="small"
-                placeholder="PKT"
+                placeholder="Pkt / Units"
+                type="number"
                 value={pkt}
                 onChange={(e) => setPkt(e.target.value)}
                 sx={{
@@ -1017,7 +1345,11 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
               <TextField
                 size="small"
                 placeholder="Amount"
-                value={quantity && rate ? (parseFloat(quantity) * parseFloat(rate)).toFixed(2) : ''}
+                value={
+                  quantity && rate
+                    ? (((parseFloat(quantity) || 0) * (parseFloat(pkt) || 1)) * (parseFloat(rate) || 0)).toFixed(2)
+                    : ''
+                }
                 slotProps={{
                   input: {
                     readOnly: true,
@@ -1089,7 +1421,7 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
                         width: '14%',
                       }}
                     >
-                      QUANTITY
+                      CASE
                     </TableCell>
                     <TableCell
                       sx={{
@@ -1121,7 +1453,7 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
                         width: '14%',
                       }}
                     >
-                      PKT / UNIT
+                      PKT / UNITS
                     </TableCell>
                     <TableCell
                       sx={{
@@ -1133,7 +1465,6 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
                         letterSpacing: '0.04em',
                         textAlign: 'center',
                         borderBottom: '1px solid #E2E8F0',
-                        borderRight: '1px solid #E2E8F0',
                         width: '14%',
                       }}
                     >
@@ -1207,309 +1538,341 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
 
       {/* View 3: Account Details View */}
       {activeSubTab === 'Account Details' && (
-        <Paper
-          elevation={0}
-          sx={{
-            width: '100%',
-            backgroundColor: '#FFFFFF',
-            borderRadius: '8px',
-            border: '1px solid #E2E8F0',
-            overflow: 'hidden',
-          }}
-        >
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {/* Top Metric Cards */}
           <Box
             sx={{
-              backgroundColor: '#0B4DB7',
-              px: { xs: 2, sm: 3 },
-              py: 1.5,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              minHeight: '52px',
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' },
+              gap: 2,
             }}
           >
-            <Typography
+            <Paper
+              elevation={0}
               sx={{
-                color: '#FFFFFF',
-                fontSize: '16px',
-                fontWeight: 700,
-                letterSpacing: '-0.01em',
-              }}
-            >
-              Account Details - {currentCustomerName}
-            </Typography>
-
-            <Button
-              variant="contained"
-              disableElevation
-              onClick={handlePrint}
-              startIcon={<PrintOutlinedIcon sx={{ fontSize: '18px !important', color: '#0F172A' }} />}
-              sx={{
+                p: 2.2,
+                borderRadius: '10px',
+                border: '1px solid #E2E8F0',
                 backgroundColor: '#FFFFFF',
-                color: '#0F172A',
-                fontSize: '13px',
-                fontWeight: 700,
-                textTransform: 'none',
-                px: 2.2,
-                py: 0.7,
-                borderRadius: '6px',
-                minWidth: 'auto',
-                lineHeight: 1.2,
-                '&:hover': {
-                  backgroundColor: '#F8FAFC',
-                },
+                display: 'flex',
+                alignItems: 'center',
+                gap: 2,
               }}
             >
-              Click to Print
-            </Button>
+              <Box
+                sx={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: '10px',
+                  backgroundColor: '#FEF2F2',
+                  color: '#DC2626',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <ReceiptLongRoundedIcon sx={{ fontSize: 24 }} />
+              </Box>
+              <Box>
+                <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#64748B' }}>
+                  Total Purchases (Debit)
+                </Typography>
+                <Typography sx={{ fontSize: '18px', fontWeight: 800, color: '#DC2626' }}>
+                  ₹{overallTotals.totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </Typography>
+              </Box>
+            </Paper>
+
+            <Paper
+              elevation={0}
+              sx={{
+                p: 2.2,
+                borderRadius: '10px',
+                border: '1px solid #E2E8F0',
+                backgroundColor: '#FFFFFF',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 2,
+              }}
+            >
+              <Box
+                sx={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: '10px',
+                  backgroundColor: '#F0FDF4',
+                  color: '#16A34A',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <AccountBalanceWalletRoundedIcon sx={{ fontSize: 24 }} />
+              </Box>
+              <Box>
+                <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#64748B' }}>
+                  Total Paid / Credits
+                </Typography>
+                <Typography sx={{ fontSize: '18px', fontWeight: 800, color: '#16A34A' }}>
+                  ₹{overallTotals.totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </Typography>
+              </Box>
+            </Paper>
+
+            <Paper
+              elevation={0}
+              sx={{
+                p: 2.2,
+                borderRadius: '10px',
+                border: '1px solid #E2E8F0',
+                backgroundColor: '#FFFFFF',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 2,
+              }}
+            >
+              <Box
+                sx={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: '10px',
+                  backgroundColor: overallTotals.netBalance < 0 ? '#FEF2F2' : '#F0FDF4',
+                  color: overallTotals.netBalance < 0 ? '#DC2626' : '#16A34A',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <AccountBalanceWalletRoundedIcon sx={{ fontSize: 24 }} />
+              </Box>
+              <Box>
+                <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#64748B' }}>
+                  Net Outstanding Balance
+                </Typography>
+                <Typography
+                  sx={{
+                    fontSize: '18px',
+                    fontWeight: 800,
+                    color: overallTotals.netBalance < 0 ? '#DC2626' : '#16A34A',
+                  }}
+                >
+                  ₹{overallTotals.netBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </Typography>
+              </Box>
+            </Paper>
           </Box>
 
-          <TableContainer>
-            <Table sx={{ width: '100%' }} aria-label="account details table">
-              <TableHead>
-                <TableRow sx={{ backgroundColor: '#F8FAFC' }}>
-                  <TableCell
-                    sx={{
-                      py: 1.5,
-                      px: { xs: 2, sm: 3 },
-                      fontSize: '11.5px',
-                      fontWeight: 700,
-                      color: '#1E293B',
-                      letterSpacing: '0.04em',
-                      borderBottom: '1px solid #E2E8F0',
-                      width: '70px',
-                    }}
-                  >
-                    SL.NO
-                  </TableCell>
-                  <TableCell
-                    sx={{
-                      py: 1.5,
-                      px: { xs: 1.5, sm: 2.5 },
-                      fontSize: '11.5px',
-                      fontWeight: 700,
-                      color: '#1E293B',
-                      letterSpacing: '0.04em',
-                      borderBottom: '1px solid #E2E8F0',
-                      width: '130px',
-                    }}
-                  >
-                    DATE
-                  </TableCell>
-                  <TableCell
-                    sx={{
-                      py: 1.5,
-                      px: { xs: 2, sm: 2.5 },
-                      fontSize: '11.5px',
-                      fontWeight: 700,
-                      color: '#1E293B',
-                      letterSpacing: '0.04em',
-                      borderBottom: '1px solid #E2E8F0',
-                    }}
-                  >
-                    COMPANY NAME
-                  </TableCell>
-                  <TableCell
-                    align="right"
-                    sx={{
-                      py: 1.5,
-                      px: { xs: 1.5, sm: 2.5 },
-                      fontSize: '11.5px',
-                      fontWeight: 700,
-                      color: '#1E293B',
-                      letterSpacing: '0.04em',
-                      borderBottom: '1px solid #E2E8F0',
-                      width: '110px',
-                    }}
-                  >
-                    DEBIT
-                  </TableCell>
-                  <TableCell
-                    align="right"
-                    sx={{
-                      py: 1.5,
-                      px: { xs: 1.5, sm: 2.5 },
-                      fontSize: '11.5px',
-                      fontWeight: 700,
-                      color: '#1E293B',
-                      letterSpacing: '0.04em',
-                      borderBottom: '1px solid #E2E8F0',
-                      width: '130px',
-                    }}
-                  >
-                    CREDIT
-                  </TableCell>
-                  <TableCell
-                    align="right"
-                    sx={{
-                      py: 1.5,
-                      px: { xs: 1.5, sm: 2.5 },
-                      fontSize: '11.5px',
-                      fontWeight: 700,
-                      color: '#1E293B',
-                      letterSpacing: '0.04em',
-                      borderBottom: '1px solid #E2E8F0',
-                      width: '130px',
-                    }}
-                  >
-                    BALANCE
-                  </TableCell>
-                  <TableCell
-                    align="center"
-                    sx={{
-                      py: 1.5,
-                      px: { xs: 2, sm: 3 },
-                      fontSize: '11.5px',
-                      fontWeight: 700,
-                      color: '#1E293B',
-                      letterSpacing: '0.04em',
-                      borderBottom: '1px solid #E2E8F0',
-                      width: '80px',
-                    }}
-                  >
-                    DELETE
-                  </TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {accountLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
-                      <CircularProgress size={32} sx={{ color: '#0B4DB7' }} />
+          {/* Account Details Table */}
+          <Paper
+            elevation={0}
+            sx={{
+              width: '100%',
+              backgroundColor: '#FFFFFF',
+              borderRadius: '10px',
+              border: '1px solid #E2E8F0',
+              overflow: 'hidden',
+            }}
+          >
+            <Box
+              sx={{
+                backgroundColor: '#0B4DB7',
+                px: { xs: 2, sm: 3 },
+                py: 1.5,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 1.5,
+                minHeight: '52px',
+              }}
+            >
+              <Typography
+                sx={{
+                  color: '#FFFFFF',
+                  fontSize: '15.5px',
+                  fontWeight: 700,
+                  letterSpacing: '-0.01em',
+                }}
+              >
+                Account Details {filterCustomer && filterCustomer !== 'ALL' ? `- ${filterCustomer}` : ''}
+              </Typography>
+
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                {/* Customer Filter Dropdown */}
+                <Box sx={{ minWidth: '180px' }}>
+                  <FormControl size="small" fullWidth>
+                    <Select
+                      value={filterCustomer}
+                      onChange={(e) => handleFilterCustomerChange(e.target.value)}
+                      displayEmpty
+                      IconComponent={KeyboardArrowDownRoundedIcon}
+                      sx={{
+                        height: '34px',
+                        backgroundColor: '#FFFFFF',
+                        borderRadius: '6px',
+                        fontSize: '12.5px',
+                        fontWeight: 600,
+                        color: '#0F172A',
+                        '& .MuiSelect-select': { py: 0.6, px: 1.5 },
+                        '& .MuiOutlinedInput-notchedOutline': { borderColor: '#E2E8F0' },
+                      }}
+                    >
+                      <MenuItem value="ALL" sx={{ fontSize: '13px', fontWeight: 600 }}>
+                        All Customers
+                      </MenuItem>
+                      {customerOptions.map((c) => (
+                        <MenuItem key={c.id} value={c.name} sx={{ fontSize: '13px', fontWeight: 500 }}>
+                          {c.name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Box>
+
+                <Button
+                  variant="contained"
+                  disableElevation
+                  onClick={handlePrint}
+                  startIcon={<PrintOutlinedIcon sx={{ fontSize: '18px !important', color: '#0F172A' }} />}
+                  sx={{
+                    backgroundColor: '#FFFFFF',
+                    color: '#0F172A',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    textTransform: 'none',
+                    px: 2.2,
+                    py: 0.7,
+                    borderRadius: '6px',
+                    lineHeight: 1.2,
+                    '&:hover': {
+                      backgroundColor: '#F8FAFC',
+                    },
+                  }}
+                >
+                  Click to Print
+                </Button>
+              </Box>
+            </Box>
+
+            <TableContainer>
+              <Table sx={{ width: '100%' }} aria-label="account details table">
+                <TableHead>
+                  <TableRow sx={{ backgroundColor: '#F8FAFC' }}>
+                    <TableCell sx={{ py: 1.5, px: { xs: 2, sm: 3 }, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', width: '60px' }}>
+                      SL.NO
+                    </TableCell>
+                    <TableCell sx={{ py: 1.5, px: { xs: 1.5, sm: 2.5 }, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', width: '110px' }}>
+                      DATE
+                    </TableCell>
+                    <TableCell sx={{ py: 1.5, px: { xs: 1.5, sm: 2.5 }, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', width: '140px' }}>
+                      CUSTOMER
+                    </TableCell>
+                    <TableCell sx={{ py: 1.5, px: { xs: 2, sm: 2.5 }, fontSize: '11.5px', fontWeight: 700, color: '#1E293B' }}>
+                      COMPANY NAME
+                    </TableCell>
+                    <TableCell align="right" sx={{ py: 1.5, px: { xs: 1.5, sm: 2.5 }, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', width: '110px' }}>
+                      DEBIT
+                    </TableCell>
+                    <TableCell align="right" sx={{ py: 1.5, px: { xs: 1.5, sm: 2.5 }, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', width: '110px' }}>
+                      CREDIT
+                    </TableCell>
+                    <TableCell align="right" sx={{ py: 1.5, px: { xs: 1.5, sm: 2.5 }, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', width: '120px' }}>
+                      BALANCE
+                    </TableCell>
+                    <TableCell align="center" sx={{ py: 1.5, px: { xs: 2, sm: 3 }, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', width: '70px' }}>
+                      DELETE
                     </TableCell>
                   </TableRow>
-                ) : accountDetails.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} align="center" sx={{ py: 6, color: '#64748B' }}>
-                      No ledger entries found for {currentCustomerName}.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  accountDetails.map((row, index) => {
-                    const isLast = index === accountDetails.length - 1;
-                    const rowId = row._id || row.id || '';
-                    return (
-                      <TableRow
-                        key={rowId || index}
-                        sx={{
-                          '&:hover': {
-                            backgroundColor: '#F8FAFC',
-                          },
-                        }}
-                      >
-                        <TableCell
+                </TableHead>
+                <TableBody>
+                  {accountLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={8} align="center" sx={{ py: 6 }}>
+                        <CircularProgress size={32} sx={{ color: '#0B4DB7' }} />
+                      </TableCell>
+                    </TableRow>
+                  ) : accountDetails.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} align="center" sx={{ py: 6, color: '#64748B' }}>
+                        No account details found {filterCustomer && filterCustomer !== 'ALL' ? `for ${filterCustomer}` : ''}.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    accountDetails.map((row: any, index: number) => {
+                      const isLast = index === accountDetails.length - 1;
+                      const rowId = row._id || row.id || '';
+                      return (
+                        <TableRow
+                          key={rowId || index}
                           sx={{
-                            py: 1.6,
-                            px: { xs: 2, sm: 3 },
-                            fontSize: '13.5px',
-                            fontWeight: 600,
-                            color: '#1E293B',
-                            borderBottom: isLast ? 'none' : '1px solid #EEF2F6',
+                            '&:hover': {
+                              backgroundColor: '#F8FAFC',
+                            },
                           }}
                         >
-                          {index + 1}
-                        </TableCell>
-                        <TableCell
-                          sx={{
-                            py: 1.6,
-                            px: { xs: 1.5, sm: 2.5 },
-                            fontSize: '13.5px',
-                            fontWeight: 500,
-                            color: '#475569',
-                            borderBottom: isLast ? 'none' : '1px solid #EEF2F6',
-                          }}
-                        >
-                          {row.date}
-                        </TableCell>
-                        <TableCell
-                          sx={{
-                            py: 1.6,
-                            px: { xs: 2, sm: 2.5 },
-                            fontSize: '13.5px',
-                            fontWeight: 600,
-                            color: '#0F172A',
-                            borderBottom: isLast ? 'none' : '1px solid #EEF2F6',
-                          }}
-                        >
-                          {row.companyName}
-                        </TableCell>
-                        <TableCell
-                          align="right"
-                          sx={{
-                            py: 1.6,
-                            px: { xs: 1.5, sm: 2.5 },
-                            fontSize: '13.5px',
-                            fontWeight: 500,
-                            color: '#475569',
-                            borderBottom: isLast ? 'none' : '1px solid #EEF2F6',
-                          }}
-                        >
-                          {row.debit}
-                        </TableCell>
-                        <TableCell
-                          align="right"
-                          sx={{
-                            py: 1.6,
-                            px: { xs: 1.5, sm: 2.5 },
-                            fontSize: '13.5px',
-                            fontWeight: 600,
-                            color: '#0F172A',
-                            borderBottom: isLast ? 'none' : '1px solid #EEF2F6',
-                          }}
-                        >
-                          {row.credit}
-                        </TableCell>
-                        <TableCell
-                          align="right"
-                          sx={{
-                            py: 1.6,
-                            px: { xs: 1.5, sm: 2.5 },
-                            fontSize: '13.5px',
-                            fontWeight: 700,
-                            color: String(row.balance).startsWith('-') ? '#DC2626' : '#16A34A',
-                            borderBottom: isLast ? 'none' : '1px solid #EEF2F6',
-                          }}
-                        >
-                          {row.balance}
-                        </TableCell>
-                        <TableCell
-                          align="center"
-                          sx={{
-                            py: 1.6,
-                            px: { xs: 2, sm: 3 },
-                            borderBottom: isLast ? 'none' : '1px solid #EEF2F6',
-                          }}
-                        >
-                          <Tooltip title="Delete Record" arrow>
-                            <IconButton
-                              size="small"
-                              onClick={() => handleDeleteAccountEntry(rowId)}
-                              sx={{
-                                color: '#64748B',
-                                backgroundColor: '#F8FAFC',
-                                border: '1px solid #E2E8F0',
-                                borderRadius: '6px',
-                                p: 0.7,
-                                transition: 'all 0.15s ease',
-                                '&:hover': {
-                                  color: '#DC2626',
-                                  backgroundColor: '#FEF2F2',
-                                  borderColor: '#FECACA',
-                                },
-                              }}
-                            >
-                              <DeleteOutlineRoundedIcon sx={{ fontSize: 16 }} />
-                            </IconButton>
-                          </Tooltip>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </Paper>
+                          <TableCell sx={{ py: 1.6, px: { xs: 2, sm: 3 }, fontSize: '13.5px', fontWeight: 600, color: '#1E293B', borderBottom: isLast ? 'none' : '1px solid #EEF2F6' }}>
+                            {index + 1}
+                          </TableCell>
+                          <TableCell sx={{ py: 1.6, px: { xs: 1.5, sm: 2.5 }, fontSize: '13.5px', fontWeight: 500, color: '#475569', borderBottom: isLast ? 'none' : '1px solid #EEF2F6' }}>
+                            {row.date}
+                          </TableCell>
+                          <TableCell sx={{ py: 1.6, px: { xs: 1.5, sm: 2.5 }, fontSize: '13.5px', fontWeight: 700, color: '#0B4DB7', borderBottom: isLast ? 'none' : '1px solid #EEF2F6' }}>
+                            {row.customerName}
+                          </TableCell>
+                          <TableCell sx={{ py: 1.6, px: { xs: 2, sm: 2.5 }, fontSize: '13.5px', fontWeight: 600, color: '#0F172A', borderBottom: isLast ? 'none' : '1px solid #EEF2F6' }}>
+                            {row.companyName}
+                          </TableCell>
+                          <TableCell align="right" sx={{ py: 1.6, px: { xs: 1.5, sm: 2.5 }, fontSize: '13.5px', fontWeight: 500, color: '#DC2626', borderBottom: isLast ? 'none' : '1px solid #EEF2F6' }}>
+                            {row.debit}
+                          </TableCell>
+                          <TableCell align="right" sx={{ py: 1.6, px: { xs: 1.5, sm: 2.5 }, fontSize: '13.5px', fontWeight: 600, color: '#16A34A', borderBottom: isLast ? 'none' : '1px solid #EEF2F6' }}>
+                            {row.credit}
+                          </TableCell>
+                          <TableCell
+                            align="right"
+                            sx={{
+                              py: 1.6,
+                              px: { xs: 1.5, sm: 2.5 },
+                              fontSize: '13.5px',
+                              fontWeight: 700,
+                              color: String(row.balance).startsWith('-') ? '#DC2626' : '#16A34A',
+                              borderBottom: isLast ? 'none' : '1px solid #EEF2F6',
+                            }}
+                          >
+                            {row.balance}
+                          </TableCell>
+                          <TableCell align="center" sx={{ py: 1.6, px: { xs: 2, sm: 3 }, borderBottom: isLast ? 'none' : '1px solid #EEF2F6' }}>
+                            <Tooltip title="Delete Record" arrow>
+                              <IconButton
+                                size="small"
+                                onClick={() => handleDeleteAccountEntry(rowId)}
+                                sx={{
+                                  color: '#64748B',
+                                  backgroundColor: '#F8FAFC',
+                                  border: '1px solid #E2E8F0',
+                                  borderRadius: '6px',
+                                  p: 0.7,
+                                  transition: 'all 0.15s ease',
+                                  '&:hover': {
+                                    color: '#DC2626',
+                                    backgroundColor: '#FEF2F2',
+                                    borderColor: '#FECACA',
+                                  },
+                                }}
+                              >
+                                <DeleteOutlineRoundedIcon sx={{ fontSize: 16 }} />
+                              </IconButton>
+                            </Tooltip>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Paper>
+        </Box>
       )}
 
       {/* View 4: Particular Details View */}
@@ -1532,6 +1895,9 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
               py: 1.5,
               display: 'flex',
               alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 1.5,
               minHeight: '52px',
             }}
           >
@@ -1543,106 +1909,89 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
                 letterSpacing: '-0.01em',
               }}
             >
-              Particular Details - {currentCustomerName}
+              Particular Details {filterCustomer !== 'ALL' ? `- ${filterCustomer}` : '(All Customers)'}
             </Typography>
+
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              {/* Customer Filter Dropdown */}
+              <Box sx={{ minWidth: '180px' }}>
+                <FormControl size="small" fullWidth>
+                  <Select
+                    value={filterCustomer}
+                    onChange={(e) => handleFilterCustomerChange(e.target.value)}
+                    displayEmpty
+                    IconComponent={KeyboardArrowDownRoundedIcon}
+                    sx={{
+                      height: '34px',
+                      backgroundColor: '#FFFFFF',
+                      borderRadius: '6px',
+                      fontSize: '12.5px',
+                      fontWeight: 600,
+                      color: '#0F172A',
+                      '& .MuiSelect-select': { py: 0.6, px: 1.5 },
+                      '& .MuiOutlinedInput-notchedOutline': { borderColor: '#E2E8F0' },
+                    }}
+                  >
+                    <MenuItem value="ALL" sx={{ fontSize: '13px', fontWeight: 600 }}>
+                      All Customers
+                    </MenuItem>
+                    {customerOptions.map((c) => (
+                      <MenuItem key={c.id} value={c.name} sx={{ fontSize: '13px', fontWeight: 500 }}>
+                        {c.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Box>
+
+              <Chip
+                label={`${particularDetails.length} Bills`}
+                size="small"
+                sx={{
+                  backgroundColor: 'rgba(255,255,255,0.2)',
+                  color: '#FFFFFF',
+                  fontWeight: 700,
+                  fontSize: '12px',
+                }}
+              />
+            </Box>
           </Box>
 
           <TableContainer>
             <Table sx={{ width: '100%', borderCollapse: 'collapse' }} aria-label="particular details table">
               <TableHead>
                 <TableRow sx={{ backgroundColor: '#F8FAFC' }}>
-                  <TableCell
-                    align="center"
-                    sx={{
-                      py: 1.4,
-                      px: 2,
-                      fontSize: '11.5px',
-                      fontWeight: 700,
-                      color: '#1E293B',
-                      letterSpacing: '0.04em',
-                      borderBottom: '1px solid #E2E8F0',
-                      borderRight: '1px solid #E2E8F0',
-                      width: '100px',
-                    }}
-                  >
+                  <TableCell align="center" sx={{ py: 1.4, px: 1.5, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', letterSpacing: '0.04em', borderBottom: '1px solid #E2E8F0', borderRight: '1px solid #E2E8F0', width: '80px' }}>
                     BILL.NO
                   </TableCell>
-                  <TableCell
-                    align="center"
-                    sx={{
-                      py: 1.4,
-                      px: 2,
-                      fontSize: '11.5px',
-                      fontWeight: 700,
-                      color: '#1E293B',
-                      letterSpacing: '0.04em',
-                      borderBottom: '1px solid #E2E8F0',
-                      borderRight: '1px solid #E2E8F0',
-                      width: '180px',
-                    }}
-                  >
+                  <TableCell align="center" sx={{ py: 1.4, px: 1.5, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', letterSpacing: '0.04em', borderBottom: '1px solid #E2E8F0', borderRight: '1px solid #E2E8F0', width: '130px' }}>
+                    CUSTOMER
+                  </TableCell>
+                  <TableCell align="center" sx={{ py: 1.4, px: 1.5, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', letterSpacing: '0.04em', borderBottom: '1px solid #E2E8F0', borderRight: '1px solid #E2E8F0', width: '140px' }}>
                     COMPANY NAME
                   </TableCell>
-                  <TableCell
-                    align="center"
-                    sx={{
-                      py: 1.4,
-                      px: 2,
-                      fontSize: '11.5px',
-                      fontWeight: 700,
-                      color: '#1E293B',
-                      letterSpacing: '0.04em',
-                      borderBottom: '1px solid #E2E8F0',
-                      borderRight: '1px solid #E2E8F0',
-                      width: '120px',
-                    }}
-                  >
+                  <TableCell align="center" sx={{ py: 1.4, px: 1.5, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', letterSpacing: '0.04em', borderBottom: '1px solid #E2E8F0', borderRight: '1px solid #E2E8F0', width: '95px' }}>
                     DATE
                   </TableCell>
-                  <TableCell
-                    align="center"
-                    sx={{
-                      py: 1.4,
-                      px: 2,
-                      fontSize: '11.5px',
-                      fontWeight: 700,
-                      color: '#1E293B',
-                      letterSpacing: '0.04em',
-                      borderBottom: '1px solid #E2E8F0',
-                      borderRight: '1px solid #E2E8F0',
-                      width: '130px',
-                    }}
-                  >
-                    AMOUNT
+                  <TableCell align="right" sx={{ py: 1.4, px: 1.5, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', letterSpacing: '0.04em', borderBottom: '1px solid #E2E8F0', borderRight: '1px solid #E2E8F0', width: '100px' }}>
+                    SUBTOTAL
                   </TableCell>
-                  <TableCell
-                    align="center"
-                    sx={{
-                      py: 1.4,
-                      px: 2,
-                      fontSize: '11.5px',
-                      fontWeight: 700,
-                      color: '#1E293B',
-                      letterSpacing: '0.04em',
-                      borderBottom: '1px solid #E2E8F0',
-                      borderRight: '1px solid #E2E8F0',
-                    }}
-                  >
-                    TRANSPORT NAME
+                  <TableCell align="center" sx={{ py: 1.4, px: 1, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', letterSpacing: '0.04em', borderBottom: '1px solid #E2E8F0', borderRight: '1px solid #E2E8F0', width: '80px' }}>
+                    DISCOUNT
                   </TableCell>
-                  <TableCell
-                    align="center"
-                    sx={{
-                      py: 1.4,
-                      px: 2,
-                      fontSize: '11.5px',
-                      fontWeight: 700,
-                      color: '#1E293B',
-                      letterSpacing: '0.04em',
-                      borderBottom: '1px solid #E2E8F0',
-                      width: '180px',
-                    }}
-                  >
+                  <TableCell align="center" sx={{ py: 1.4, px: 1, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', letterSpacing: '0.04em', borderBottom: '1px solid #E2E8F0', borderRight: '1px solid #E2E8F0', width: '80px' }}>
+                    PACKING
+                  </TableCell>
+                  <TableCell align="center" sx={{ py: 1.4, px: 1, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', letterSpacing: '0.04em', borderBottom: '1px solid #E2E8F0', borderRight: '1px solid #E2E8F0', width: '75px' }}>
+                    TAX
+                  </TableCell>
+                  <TableCell align="right" sx={{ py: 1.4, px: 1.5, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', letterSpacing: '0.04em', borderBottom: '1px solid #E2E8F0', borderRight: '1px solid #E2E8F0', width: '110px' }}>
+                    NET TOTAL
+                  </TableCell>
+                  <TableCell align="center" sx={{ py: 1.4, px: 1.5, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', letterSpacing: '0.04em', borderBottom: '1px solid #E2E8F0', borderRight: '1px solid #E2E8F0', width: '120px' }}>
+                    TRANSPORT
+                  </TableCell>
+                  <TableCell align="center" sx={{ py: 1.4, px: 1.5, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', letterSpacing: '0.04em', borderBottom: '1px solid #E2E8F0', width: '110px' }}>
                     ACTION
                   </TableCell>
                 </TableRow>
@@ -1650,20 +1999,26 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
               <TableBody>
                 {particularLoading ? (
                   <TableRow>
-                    <TableCell colSpan={6} align="center" sx={{ py: 6 }}>
+                    <TableCell colSpan={11} align="center" sx={{ py: 6 }}>
                       <CircularProgress size={32} sx={{ color: '#0B4DB7' }} />
                     </TableCell>
                   </TableRow>
                 ) : particularDetails.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} align="center" sx={{ py: 6, color: '#64748B' }}>
-                      No particular bills created yet for {currentCustomerName}.
+                    <TableCell colSpan={11} align="center" sx={{ py: 6, color: '#64748B' }}>
+                      No particular bills found {filterCustomer !== 'ALL' ? `for ${filterCustomer}` : ''}.
                     </TableCell>
                   </TableRow>
                 ) : (
                   particularDetails.map((row, index) => {
                     const isLast = index === particularDetails.length - 1;
                     const rowId = row._id || row.id || '';
+                    const subtotalNum = parseFloat(String(row.amount || row.total || '0').replace(/,/g, '')) || 0;
+                    const totalNum = parseFloat(String(row.total || row.amount || '0').replace(/,/g, '')) || 0;
+                    const discStr = row.discount && parseFloat(row.discount) > 0 ? (parseFloat(row.discount) <= 100 ? `${row.discount}%` : `₹${row.discount}`) : '-';
+                    const packStr = row.packing && parseFloat(row.packing) > 0 ? (parseFloat(row.packing) <= 100 ? `${row.packing}%` : `₹${row.packing}`) : '-';
+                    const taxStr = row.tax && parseFloat(row.tax) > 0 ? (parseFloat(row.tax) <= 100 ? `${row.tax}%` : `₹${row.tax}`) : '-';
+
                     return (
                       <TableRow
                         key={rowId || index}
@@ -1673,95 +2028,42 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
                           },
                         }}
                       >
-                        <TableCell
-                          align="center"
-                          sx={{
-                            py: 1.5,
-                            px: 1.5,
-                            fontSize: '13.5px',
-                            fontWeight: 700,
-                            color: '#0F172A',
-                            borderBottom: isLast ? 'none' : '1px solid #EEF2F6',
-                            borderRight: '1px solid #EEF2F6',
-                          }}
-                        >
+                        <TableCell align="center" sx={{ py: 1.4, px: 1.5, fontSize: '13px', fontWeight: 700, color: '#0F172A', borderBottom: isLast ? 'none' : '1px solid #EEF2F6', borderRight: '1px solid #EEF2F6' }}>
                           {row.billNo}
                         </TableCell>
-                        <TableCell
-                          align="center"
-                          sx={{
-                            py: 1.5,
-                            px: 2,
-                            fontSize: '13px',
-                            fontWeight: 600,
-                            color: '#0F172A',
-                            borderBottom: isLast ? 'none' : '1px solid #EEF2F6',
-                            borderRight: '1px solid #EEF2F6',
-                          }}
-                        >
+                        <TableCell align="center" sx={{ py: 1.4, px: 1.5, fontSize: '13px', fontWeight: 700, color: '#0B4DB7', borderBottom: isLast ? 'none' : '1px solid #EEF2F6', borderRight: '1px solid #EEF2F6' }}>
+                          {row.customerName}
+                        </TableCell>
+                        <TableCell align="center" sx={{ py: 1.4, px: 1.5, fontSize: '13px', fontWeight: 600, color: '#0F172A', borderBottom: isLast ? 'none' : '1px solid #EEF2F6', borderRight: '1px solid #EEF2F6' }}>
                           {row.companyName}
                         </TableCell>
-                        <TableCell
-                          align="center"
-                          sx={{
-                            py: 1.5,
-                            px: 2,
-                            fontSize: '13px',
-                            fontWeight: 500,
-                            color: '#475569',
-                            borderBottom: isLast ? 'none' : '1px solid #EEF2F6',
-                            borderRight: '1px solid #EEF2F6',
-                          }}
-                        >
+                        <TableCell align="center" sx={{ py: 1.4, px: 1.5, fontSize: '12.5px', fontWeight: 500, color: '#475569', borderBottom: isLast ? 'none' : '1px solid #EEF2F6', borderRight: '1px solid #EEF2F6' }}>
                           {row.date}
                         </TableCell>
-                        <TableCell
-                          align="center"
-                          sx={{
-                            py: 1.5,
-                            px: 2,
-                            fontSize: '13px',
-                            fontWeight: 600,
-                            color: '#0F172A',
-                            borderBottom: isLast ? 'none' : '1px solid #EEF2F6',
-                            borderRight: '1px solid #EEF2F6',
-                          }}
-                        >
-                          {row.amount || row.total}
+                        <TableCell align="right" sx={{ py: 1.4, px: 1.5, fontSize: '13px', fontWeight: 600, color: '#475569', borderBottom: isLast ? 'none' : '1px solid #EEF2F6', borderRight: '1px solid #EEF2F6' }}>
+                          ₹{subtotalNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </TableCell>
-                        <TableCell
-                          align="center"
-                          sx={{
-                            py: 1.5,
-                            px: 2,
-                            fontSize: '13px',
-                            fontWeight: 500,
-                            color: '#334155',
-                            borderBottom: isLast ? 'none' : '1px solid #EEF2F6',
-                            borderRight: '1px solid #EEF2F6',
-                          }}
-                        >
+                        <TableCell align="center" sx={{ py: 1.4, px: 1, fontSize: '12.5px', fontWeight: 600, color: discStr !== '-' ? '#DC2626' : '#94A3B8', borderBottom: isLast ? 'none' : '1px solid #EEF2F6', borderRight: '1px solid #EEF2F6' }}>
+                          {discStr}
+                        </TableCell>
+                        <TableCell align="center" sx={{ py: 1.4, px: 1, fontSize: '12.5px', fontWeight: 600, color: packStr !== '-' ? '#0F172A' : '#94A3B8', borderBottom: isLast ? 'none' : '1px solid #EEF2F6', borderRight: '1px solid #EEF2F6' }}>
+                          {packStr}
+                        </TableCell>
+                        <TableCell align="center" sx={{ py: 1.4, px: 1, fontSize: '12.5px', fontWeight: 600, color: taxStr !== '-' ? '#0F172A' : '#94A3B8', borderBottom: isLast ? 'none' : '1px solid #EEF2F6', borderRight: '1px solid #EEF2F6' }}>
+                          {taxStr}
+                        </TableCell>
+                        <TableCell align="right" sx={{ py: 1.4, px: 1.5, fontSize: '13.5px', fontWeight: 800, color: '#0F172A', borderBottom: isLast ? 'none' : '1px solid #EEF2F6', borderRight: '1px solid #EEF2F6' }}>
+                          ₹{totalNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </TableCell>
+                        <TableCell align="center" sx={{ py: 1.4, px: 1.5, fontSize: '12.5px', fontWeight: 500, color: '#334155', borderBottom: isLast ? 'none' : '1px solid #EEF2F6', borderRight: '1px solid #EEF2F6' }}>
                           {row.transport || row.transportName || '-'}
                         </TableCell>
-                        <TableCell
-                          align="center"
-                          sx={{
-                            py: 1.5,
-                            px: 1.5,
-                            borderBottom: isLast ? 'none' : '1px solid #EEF2F6',
-                          }}
-                        >
-                          <Box
-                            sx={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: 0.6,
-                            }}
-                          >
+                        <TableCell align="center" sx={{ py: 1.4, px: 1.5, borderBottom: isLast ? 'none' : '1px solid #EEF2F6' }}>
+                          <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 0.6 }}>
                             <Tooltip title="View" arrow>
                               <IconButton
                                 size="small"
+                                onClick={() => handleOpenBillPrint(row, false)}
                                 sx={{
                                   backgroundColor: '#0B4DB7',
                                   color: '#FFFFFF',
@@ -1779,7 +2081,7 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
                             <Tooltip title="Print" arrow>
                               <IconButton
                                 size="small"
-                                onClick={handlePrint}
+                                onClick={() => handleOpenBillPrint(row, true)}
                                 sx={{
                                   backgroundColor: '#334155',
                                   color: '#FFFFFF',
@@ -1864,7 +2166,7 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
                   letterSpacing: '-0.01em',
                 }}
               >
-                Add Credit - {currentCustomerName}
+                Add Credit - {currentCustomerName || 'Customer'}
               </Typography>
             </Box>
 
@@ -1897,27 +2199,33 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
                 >
                   Customer Name
                 </Typography>
-                <TextField
-                  fullWidth
-                  size="small"
-                  value={currentCustomerName}
-                  slotProps={{
-                    input: {
-                      readOnly: true,
-                      sx: {
-                        fontSize: '13.5px',
-                        fontWeight: 600,
-                        height: '42px',
-                        backgroundColor: '#F8FAFC',
-                        borderRadius: '6px',
-                        color: '#0F172A',
-                        '& .MuiOutlinedInput-notchedOutline': {
-                          borderColor: '#CBD5E1',
-                        },
+                <FormControl fullWidth size="small">
+                  <Select
+                    value={addCreditCustomerName || currentCustomerName}
+                    onChange={(e) => setAddCreditCustomerName(e.target.value)}
+                    IconComponent={KeyboardArrowDownRoundedIcon}
+                    sx={{
+                      height: '42px',
+                      borderRadius: '6px',
+                      backgroundColor: '#FFFFFF',
+                      fontSize: '13.5px',
+                      fontWeight: 600,
+                      color: '#0F172A',
+                      '& .MuiOutlinedInput-notchedOutline': {
+                        borderColor: '#CBD5E1',
                       },
-                    },
-                  }}
-                />
+                      '&:hover .MuiOutlinedInput-notchedOutline': {
+                        borderColor: '#94A3B8',
+                      },
+                    }}
+                  >
+                    {customerOptions.map((opt) => (
+                      <MenuItem key={opt.id} value={opt.name} sx={{ fontSize: '13.5px', fontWeight: 500 }}>
+                        {opt.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
               </Box>
 
               {/* Company Name */}
@@ -2103,6 +2411,12 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
           </Paper>
         </Box>
       )}
+      {/* Bill Print & Preview Modal */}
+      <BillPrintModal
+        open={printModalOpen}
+        onClose={() => setPrintModalOpen(false)}
+        bill={selectedBillForPrint}
+      />
     </Box>
   );
 };

@@ -1,23 +1,9 @@
 import type { Request, Response, NextFunction } from 'express';
 import { Product } from '../models/Product';
 
-const DEFAULT_PRODUCTS = [
-  { slNo: 1, name: '2 1/2 KURUVI' },
-  { slNo: 2, name: '3 1/2 LAKSHMI' },
-  { slNo: 3, name: '4 LAKSHMI' },
-  { slNo: 4, name: '4 DLX LAKSHMI' },
-  { slNo: 5, name: '4 MEGA LAKSHMI' },
-  { slNo: 6, name: '4 GOLD LAKSHMI' },
-  { slNo: 7, name: '5 LAKSHMI MEGA' },
-];
-
 export const getProducts = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    let products = await Product.find().sort({ slNo: 1 });
-    if (products.length === 0) {
-      await Product.insertMany(DEFAULT_PRODUCTS);
-      products = await Product.find().sort({ slNo: 1 });
-    }
+    const products = await Product.find().sort({ slNo: 1, createdAt: 1 });
     res.status(200).json({ success: true, count: products.length, data: products });
   } catch (error) {
     next(error);

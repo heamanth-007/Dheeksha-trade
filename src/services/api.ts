@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api';
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -60,7 +60,8 @@ export const ProductsApi = {
 // Particulars API
 export const ParticularsApi = {
   getAll: (customerName?: string) =>
-    request<any[]>(`/particulars${customerName ? `?customerName=${encodeURIComponent(customerName)}` : ''}`),
+    request<any[]>(`/particulars${customerName && customerName !== 'ALL' ? `?customerName=${encodeURIComponent(customerName)}` : ''}`),
+  getNextBillNo: () => request<{ nextBillNo: string }>('/particulars/next-bill-no'),
   getById: (id: string) => request<any>(`/particulars/${id}`),
   create: (data: any) => request<any>('/particulars', { method: 'POST', body: JSON.stringify(data) }),
   delete: (id: string) => request<any>(`/particulars/${id}`, { method: 'DELETE' }),
@@ -69,7 +70,7 @@ export const ParticularsApi = {
 // Account / Ledger API
 export const AccountsApi = {
   getAll: (customerName?: string) =>
-    request<any[]>(`/accounts${customerName ? `?customerName=${encodeURIComponent(customerName)}` : ''}`),
+    request<any[]>(`/accounts${customerName && customerName !== 'ALL' ? `?customerName=${encodeURIComponent(customerName)}` : ''}`),
   addCredit: (data: { customerName: string; companyName: string; creditAmount: string; date: string }) =>
     request<any>('/accounts/credit', { method: 'POST', body: JSON.stringify(data) }),
   delete: (id: string) => request<any>(`/accounts/${id}`, { method: 'DELETE' }),

@@ -13,7 +13,9 @@ function App() {
   const [activeTab, setActiveTab] = useState<NavTab>('Product');
   const [companySubView, setCompanySubView] = useState<'list' | 'add'>('list');
   const [customerSubView, setCustomerSubView] = useState<'list' | 'add'>('list');
-  const [selectedCustomerName, setSelectedCustomerName] = useState<string>('R A TRADERS 2025');
+  const [selectedCustomerName, setSelectedCustomerName] = useState<string>(() => {
+    return localStorage.getItem('dheeksha_active_customer') || '';
+  });
 
   const handleSelectTab = (tab: NavTab) => {
     setActiveTab(tab);
@@ -27,6 +29,7 @@ function App() {
 
   const handleCustomerSelectedForParticular = (customerName: string) => {
     setSelectedCustomerName(customerName);
+    localStorage.setItem('dheeksha_active_customer', customerName);
     setActiveTab('Particulars');
   };
 
