@@ -1,23 +1,26 @@
-import type { FC } from 'react';
-import { Box, Typography, IconButton } from '@mui/material';
-import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
-import NotificationsNoneRoundedIcon from '@mui/icons-material/NotificationsNoneRounded';
+import { useState, type FC, type MouseEvent } from 'react';
+import { Box, Typography, Menu, MenuItem, ListItemIcon, Divider } from '@mui/material';
 import PersonOutlineRoundedIcon from '@mui/icons-material/PersonOutlineRounded';
+import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
+import AdminPanelSettingsRoundedIcon from '@mui/icons-material/AdminPanelSettingsRounded';
 
-export type NavTab = 'Customers' | 'Company' | 'Product' | 'Particulars';
+export type NavTab = 'Customers' | 'Company' | 'Product' | 'Particulars' | 'All Customers';
 
 interface NavbarProps {
   activeTab?: NavTab;
   onSelectTab?: (tab: NavTab) => void;
   onNavigateCustomers?: () => void;
+  onLogout?: () => void;
 }
 
 export const Navbar: FC<NavbarProps> = ({
-  activeTab = 'Company',
+  activeTab = 'Customers',
   onSelectTab,
   onNavigateCustomers,
+  onLogout,
 }) => {
-  const tabs: NavTab[] = ['Customers', 'Company', 'Product', 'Particulars'];
+  const tabs: NavTab[] = ['Customers', 'Company', 'Product', 'Particulars', 'All Customers'];
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
   const handleTabClick = (tab: NavTab) => {
     if (onSelectTab) {
@@ -25,6 +28,19 @@ export const Navbar: FC<NavbarProps> = ({
     } else if (tab === 'Customers' && onNavigateCustomers) {
       onNavigateCustomers();
     }
+  };
+
+  const handleProfileClick = (event: MouseEvent<HTMLElement>) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleCloseMenu = () => {
+    setAnchorEl(null);
+  };
+
+  const handleLogoutClick = () => {
+    handleCloseMenu();
+    if (onLogout) onLogout();
   };
 
   return (
@@ -155,47 +171,72 @@ export const Navbar: FC<NavbarProps> = ({
         })}
       </Box>
 
-      {/* Right Action Icons */}
+      {/* Right Action Icons (Profile / Logout) */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-        <IconButton
-          size="small"
-          sx={{
-            color: '#475569',
-            p: 0.8,
-            '&:hover': { backgroundColor: '#F1F5F9' },
-          }}
-        >
-          <SearchRoundedIcon sx={{ fontSize: 20 }} />
-        </IconButton>
-
-        <IconButton
-          size="small"
-          sx={{
-            color: '#475569',
-            p: 0.8,
-            '&:hover': { backgroundColor: '#F1F5F9' },
-          }}
-        >
-          <NotificationsNoneRoundedIcon sx={{ fontSize: 20 }} />
-        </IconButton>
-
         <Box
+          onClick={handleProfileClick}
           sx={{
-            width: 32,
-            height: 32,
+            width: 34,
+            height: 34,
             borderRadius: '50%',
             backgroundColor: '#0B4DB7',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             cursor: 'pointer',
-            ml: 0.5,
-            transition: 'opacity 0.2s',
-            '&:hover': { opacity: 0.9 },
+            transition: 'all 0.2s ease',
+            boxShadow: '0 1px 3px rgba(11, 77, 183, 0.25)',
+            '&:hover': {
+              backgroundColor: '#083B8D',
+              transform: 'scale(1.05)',
+            },
           }}
         >
-          <PersonOutlineRoundedIcon sx={{ fontSize: 19, color: '#FFFFFF' }} />
+          <PersonOutlineRoundedIcon sx={{ fontSize: 20, color: '#FFFFFF' }} />
         </Box>
+
+        {/* Profile / Logout Menu */}
+        <Menu
+          anchorEl={anchorEl}
+          open={Boolean(anchorEl)}
+          onClose={handleCloseMenu}
+          transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+          anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+          slotProps={{
+            paper: {
+              sx: {
+                borderRadius: '10px',
+                minWidth: '160px',
+                boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
+                border: '1px solid #E2E8F0',
+                mt: 1,
+              },
+            },
+          }}
+        >
+          <MenuItem disabled sx={{ opacity: '1 !important', py: 1 }}>
+            <ListItemIcon>
+              <AdminPanelSettingsRoundedIcon sx={{ fontSize: 18, color: '#0B4DB7' }} />
+            </ListItemIcon>
+            <Box>
+              <Typography sx={{ fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>
+                Administrator
+              </Typography>
+              <Typography sx={{ fontSize: '11px', color: '#64748B' }}>
+                Logged In
+              </Typography>
+            </Box>
+          </MenuItem>
+          <Divider sx={{ my: 0.5 }} />
+          <MenuItem onClick={handleLogoutClick} sx={{ color: '#DC2626', py: 1 }}>
+            <ListItemIcon>
+              <LogoutRoundedIcon sx={{ fontSize: 18, color: '#DC2626' }} />
+            </ListItemIcon>
+            <Typography sx={{ fontSize: '13px', fontWeight: 600 }}>
+              Logout
+            </Typography>
+          </MenuItem>
+        </Menu>
       </Box>
     </Box>
   );

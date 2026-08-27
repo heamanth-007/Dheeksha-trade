@@ -117,7 +117,12 @@ export const CustomersPage: FC<CustomersPageProps> = ({ onAddNew, onSelectCustom
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this customer? This will also delete all associated particular bills and account ledger records.')) return;
+    if (
+      !window.confirm(
+        'Are you sure you want to delete this customer? This will also delete all associated particular bills and account ledger records.'
+      )
+    )
+      return;
     try {
       const deletedCust = customers.find((c) => (c._id || c.id) === id);
       await CustomersApi.delete(id);

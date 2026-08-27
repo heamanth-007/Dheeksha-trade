@@ -75,3 +75,13 @@ export const AccountsApi = {
     request<any>('/accounts/credit', { method: 'POST', body: JSON.stringify(data) }),
   delete: (id: string) => request<any>(`/accounts/${id}`, { method: 'DELETE' }),
 };
+
+// Auth API
+export const AuthApi = {
+  login: (credentials: { username: string; password: string }) =>
+    request<{ token: string; user: { username: string; role: string } }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(credentials),
+    }),
+  getMe: () => request<any>('/auth/me'),
+};

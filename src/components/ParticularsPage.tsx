@@ -65,10 +65,11 @@ interface ProductRowItem {
 
 interface ParticularsPageProps {
   initialCustomerName?: string;
+  initialSubTab?: ParticularSubTab;
 }
 
-export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName }) => {
-  const [activeSubTab, setActiveSubTab] = useState<ParticularSubTab>('Select Customer');
+export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName, initialSubTab }) => {
+  const [activeSubTab, setActiveSubTab] = useState<ParticularSubTab>(initialSubTab || 'Select Customer');
 
   // Live Dropdown options
   const [customerOptions, setCustomerOptions] = useState<{ id: string; name: string }[]>([]);
@@ -155,6 +156,13 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
     }
   }, [initialCustomerName]);
 
+  // Update subtab when prop changes
+  useEffect(() => {
+    if (initialSubTab) {
+      setActiveSubTab(initialSubTab);
+    }
+  }, [initialSubTab]);
+
   // Load Dropdown Options
   useEffect(() => {
     const loadOptions = async () => {
@@ -230,12 +238,11 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
     }
   };
 
-  // Fetch Particulars
-  const fetchParticulars = async (targetCustomer?: string) => {
+  // Fetch Particulars (Loads all bills across all customers, sorted with latest first)
+  const fetchParticulars = async () => {
     try {
       setParticularLoading(true);
-      const cust = targetCustomer !== undefined ? targetCustomer : (filterCustomer || currentCustomerName);
-      const data = await ParticularsApi.getAll(cust && cust !== 'ALL' ? cust : undefined);
+      const data = await ParticularsApi.getAll();
       setParticularDetails(data || []);
     } catch (err) {
       console.error('Failed to load particulars:', err);
@@ -249,7 +256,7 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
     if (activeSubTab === 'Account Details') {
       fetchAccounts(custToFetch);
     } else if (activeSubTab === 'Particular Details') {
-      fetchParticulars(custToFetch);
+      fetchParticulars();
     }
   }, [activeSubTab, filterCustomer, currentCustomerName]);
 
@@ -278,19 +285,6 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
       setFilterCustomer(found.name);
       setAddCreditCustomerName(found.name);
       localStorage.setItem('dheeksha_active_customer', found.name);
-    }
-  };
-
-  const handleFilterCustomerChange = (newCust: string) => {
-    setFilterCustomer(newCust);
-    if (newCust && newCust !== 'ALL') {
-      setCurrentCustomerName(newCust);
-      setAddCreditCustomerName(newCust);
-      const found = customerOptions.find((c) => c.name === newCust);
-      if (found) {
-        setSelectedCustomerId(found.id);
-      }
-      localStorage.setItem('dheeksha_active_customer', newCust);
     }
   };
 
@@ -425,7 +419,7 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
       setTax('');
       fetchNextBillNo();
       fetchAccounts(filterCustomer);
-      fetchParticulars(filterCustomer);
+      fetchParticulars();
       setActiveSubTab('Particular Details');
 
       // Open the print invoice modal automatically
@@ -458,7 +452,7 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
       alert('Credit added successfully!');
       setCreditAmount('');
       fetchAccounts(filterCustomer);
-      fetchParticulars(filterCustomer);
+      fetchParticulars();
       setActiveSubTab('Account Details');
     } catch (err) {
       console.error('Failed to add credit:', err);
@@ -486,7 +480,7 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
         );
       }
       fetchAccounts(filterCustomer);
-      fetchParticulars(filterCustomer);
+      fetchParticulars();
     } catch (err) {
       console.error('Failed to delete account entry:', err);
     }
@@ -510,7 +504,7 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
         })
       );
       fetchAccounts(filterCustomer);
-      fetchParticulars(filterCustomer);
+      fetchParticulars();
     } catch (err) {
       console.error('Failed to delete particular bill:', err);
     }
@@ -549,27 +543,6 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
     } else {
       setPrintModalOpen(true);
     }
-  };
-
-  const handlePreviewCurrentBill = () => {
-    if (productRows.length === 0) {
-      alert('Please add at least one product to preview the bill.');
-      return;
-    }
-    handleOpenBillPrint({
-      billNo: billNo || 'PREVIEW',
-      date: date,
-      customerName: currentCustomerName,
-      companyName: company,
-      transport: transport || 'VARMA TRANSPORT',
-      caseCount: caseCount || '0',
-      products: productRows,
-      amount: subtotalAmount.toFixed(2),
-      discount: discount || '0',
-      packing: packing || '0',
-      tax: tax || '0',
-      total: finalTotalAmount,
-    }, false);
   };
 
   const handlePrint = async () => {
@@ -1171,28 +1144,7 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
                     }}
                   />
                 </Box>
-                <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 1 }}>
-                  <Button
-                    variant="outlined"
-                    onClick={handlePreviewCurrentBill}
-                    startIcon={<VisibilityRoundedIcon sx={{ fontSize: 16 }} />}
-                    sx={{
-                      height: '36px',
-                      fontSize: '12.5px',
-                      fontWeight: 700,
-                      textTransform: 'none',
-                      borderRadius: '6px',
-                      borderColor: '#0284C7',
-                      color: '#0284C7',
-                      px: 1.5,
-                      '&:hover': {
-                        backgroundColor: '#F0F9FF',
-                        borderColor: '#0369A1',
-                      },
-                    }}
-                  >
-                    Preview
-                  </Button>
+                <Box sx={{ display: 'flex', alignItems: 'flex-end' }}>
                   <Button
                     variant="contained"
                     disableElevation
@@ -1694,41 +1646,10 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
                   letterSpacing: '-0.01em',
                 }}
               >
-                Account Details {filterCustomer && filterCustomer !== 'ALL' ? `- ${filterCustomer}` : ''}
+                Account Details {currentCustomerName || filterCustomer ? `- ${currentCustomerName || filterCustomer}` : ''}
               </Typography>
 
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
-                {/* Customer Filter Dropdown */}
-                <Box sx={{ minWidth: '180px' }}>
-                  <FormControl size="small" fullWidth>
-                    <Select
-                      value={filterCustomer}
-                      onChange={(e) => handleFilterCustomerChange(e.target.value)}
-                      displayEmpty
-                      IconComponent={KeyboardArrowDownRoundedIcon}
-                      sx={{
-                        height: '34px',
-                        backgroundColor: '#FFFFFF',
-                        borderRadius: '6px',
-                        fontSize: '12.5px',
-                        fontWeight: 600,
-                        color: '#0F172A',
-                        '& .MuiSelect-select': { py: 0.6, px: 1.5 },
-                        '& .MuiOutlinedInput-notchedOutline': { borderColor: '#E2E8F0' },
-                      }}
-                    >
-                      <MenuItem value="ALL" sx={{ fontSize: '13px', fontWeight: 600 }}>
-                        All Customers
-                      </MenuItem>
-                      {customerOptions.map((c) => (
-                        <MenuItem key={c.id} value={c.name} sx={{ fontSize: '13px', fontWeight: 500 }}>
-                          {c.name}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Box>
-
                 <Button
                   variant="contained"
                   disableElevation
@@ -1909,41 +1830,10 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName 
                 letterSpacing: '-0.01em',
               }}
             >
-              Particular Details {filterCustomer !== 'ALL' ? `- ${filterCustomer}` : '(All Customers)'}
+              Particular Details (All Bills)
             </Typography>
 
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              {/* Customer Filter Dropdown */}
-              <Box sx={{ minWidth: '180px' }}>
-                <FormControl size="small" fullWidth>
-                  <Select
-                    value={filterCustomer}
-                    onChange={(e) => handleFilterCustomerChange(e.target.value)}
-                    displayEmpty
-                    IconComponent={KeyboardArrowDownRoundedIcon}
-                    sx={{
-                      height: '34px',
-                      backgroundColor: '#FFFFFF',
-                      borderRadius: '6px',
-                      fontSize: '12.5px',
-                      fontWeight: 600,
-                      color: '#0F172A',
-                      '& .MuiSelect-select': { py: 0.6, px: 1.5 },
-                      '& .MuiOutlinedInput-notchedOutline': { borderColor: '#E2E8F0' },
-                    }}
-                  >
-                    <MenuItem value="ALL" sx={{ fontSize: '13px', fontWeight: 600 }}>
-                      All Customers
-                    </MenuItem>
-                    {customerOptions.map((c) => (
-                      <MenuItem key={c.id} value={c.name} sx={{ fontSize: '13px', fontWeight: 500 }}>
-                        {c.name}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Box>
-
               <Chip
                 label={`${particularDetails.length} Bills`}
                 size="small"

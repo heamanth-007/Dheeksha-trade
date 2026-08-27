@@ -2,20 +2,36 @@ import { useState } from 'react';
 import { ThemeProvider, CssBaseline, Box } from '@mui/material';
 import { theme } from './theme/theme';
 import { Navbar, type NavTab } from './components/Navbar';
+import { LoginPage } from './components/LoginPage';
 import { CustomersPage } from './components/CustomersPage';
+import { AllCustomersPage } from './components/AllCustomersPage';
 import { AddCustomerPage } from './components/AddCustomerPage';
 import { CompaniesPage } from './components/CompaniesPage';
 import { AddCompanyPage } from './components/AddCompanyPage';
 import { ProductsPage } from './components/ProductsPage';
-import { ParticularsPage } from './components/ParticularsPage';
+import { ParticularsPage, type ParticularSubTab } from './components/ParticularsPage';
 
 function App() {
-  const [activeTab, setActiveTab] = useState<NavTab>('Product');
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return Boolean(localStorage.getItem('dheeksha_auth_token'));
+  });
+  const [activeTab, setActiveTab] = useState<NavTab>('Customers');
   const [companySubView, setCompanySubView] = useState<'list' | 'add'>('list');
   const [customerSubView, setCustomerSubView] = useState<'list' | 'add'>('list');
   const [selectedCustomerName, setSelectedCustomerName] = useState<string>(() => {
     return localStorage.getItem('dheeksha_active_customer') || '';
   });
+  const [particularInitialSubTab, setParticularInitialSubTab] = useState<ParticularSubTab>('Account Details');
+
+  const handleLoginSuccess = () => {
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('dheeksha_auth_token');
+    localStorage.removeItem('dheeksha_auth_user');
+    setIsAuthenticated(false);
+  };
 
   const handleSelectTab = (tab: NavTab) => {
     setActiveTab(tab);
@@ -27,11 +43,21 @@ function App() {
     }
   };
 
-  const handleCustomerSelectedForParticular = (customerName: string) => {
+  const handleCustomerSelectedForParticular = (customerName: string, subTab?: ParticularSubTab) => {
     setSelectedCustomerName(customerName);
     localStorage.setItem('dheeksha_active_customer', customerName);
+    setParticularInitialSubTab(subTab || 'Account Details');
     setActiveTab('Particulars');
   };
+
+  if (!isAuthenticated) {
+    return (
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <LoginPage onLoginSuccess={handleLoginSuccess} />
+      </ThemeProvider>
+    );
+  }
 
   return (
     <ThemeProvider theme={theme}>
@@ -52,12 +78,16 @@ function App() {
             setActiveTab('Customers');
             setCustomerSubView('list');
           }}
+          onLogout={handleLogout}
         />
 
         <Box component="main" sx={{ flexGrow: 1, width: '100%' }}>
           {/* Particulars Tab */}
           {activeTab === 'Particulars' && (
-            <ParticularsPage initialCustomerName={selectedCustomerName} />
+            <ParticularsPage
+              initialCustomerName={selectedCustomerName}
+              initialSubTab={particularInitialSubTab}
+            />
           )}
 
           {/* Product Tab */}
@@ -76,6 +106,17 @@ function App() {
                 <CompaniesPage onAddCompany={() => setCompanySubView('add')} />
               )}
             </>
+          )}
+
+          {/* All Customers Tab */}
+          {activeTab === 'All Customers' && (
+            <AllCustomersPage
+              onAddNewCustomer={() => {
+                setActiveTab('Customers');
+                setCustomerSubView('add');
+              }}
+              onSelectCustomerForParticular={handleCustomerSelectedForParticular}
+            />
           )}
 
           {/* Customers Tab */}
@@ -99,6 +140,7 @@ function App() {
           {activeTab !== 'Particulars' &&
             activeTab !== 'Product' &&
             activeTab !== 'Company' &&
+            activeTab !== 'All Customers' &&
             activeTab !== 'Customers' && (
               <Box sx={{ p: 4, textAlign: 'center', color: '#64748B' }}>
                 {activeTab} content coming soon.

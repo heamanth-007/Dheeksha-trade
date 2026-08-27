@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { Customer } from '../models/Customer';
+import { AccountLedger } from '../models/AccountLedger';
 import { escapeRegex } from '../utils/ledgerUtils';
 
 export const getCustomers = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -32,8 +33,55 @@ export const getCustomers = async (_req: Request, res: Response, next: NextFunct
       }
     }
 
-    const customers = await Customer.find().sort({ createdAt: 1 });
-    res.status(200).json({ success: true, count: customers.length, data: customers });
+    const customers = await Customer.find().sort({ createdAt: 1 }).lean();
+    const allLedgerEntries = await AccountLedger.find({}).lean();
+
+    // Group ledger by customer name (normalized lowercase)
+    const statsMap = new Map<string, { totalDebit: number; totalCredit: number; lastDate: string }>();
+
+    for (const entry of allLedgerEntries) {
+      const key = (entry.customerName || '').trim().toLowerCase();
+      if (!key) continue;
+
+      const deb = parseFloat(String(entry.debit || '0').replace(/,/g, '')) || 0;
+      const cred = parseFloat(String(entry.credit || '0').replace(/,/g, '')) || 0;
+
+      const existing = statsMap.get(key) || { totalDebit: 0, totalCredit: 0, lastDate: '' };
+      existing.totalDebit += deb;
+      existing.totalCredit += cred;
+      if (entry.date && (!existing.lastDate || entry.date > existing.lastDate)) {
+        existing.lastDate = entry.date;
+      }
+      statsMap.set(key, existing);
+    }
+
+    const enrichedCustomers = customers.map((c: any) => {
+      const key = (c.name || '').trim().toLowerCase();
+      const stats = statsMap.get(key) || { totalDebit: 0, totalCredit: 0, lastDate: '' };
+      const totalDebit = Number(stats.totalDebit.toFixed(2));
+      const totalCredit = Number(stats.totalCredit.toFixed(2));
+      const pendingDue = Number(Math.max(0, totalDebit - totalCredit).toFixed(2));
+      const netBalance = Number((totalCredit - totalDebit).toFixed(2));
+
+      let status: 'PENDING' | 'SETTLED' | 'ADVANCE' = 'SETTLED';
+      if (pendingDue > 0) {
+        status = 'PENDING';
+      } else if (netBalance > 0) {
+        status = 'ADVANCE';
+      }
+
+      return {
+        ...c,
+        totalDebit,
+        totalCredit,
+        pendingDue,
+        netBalance,
+        status,
+        lastTransactionDate: stats.lastDate || null,
+      };
+    });
+
+    res.status(200).json({ success: true, count: enrichedCustomers.length, data: enrichedCustomers });
   } catch (error) {
     next(error);
   }

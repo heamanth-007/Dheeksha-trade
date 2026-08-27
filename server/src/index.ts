@@ -9,6 +9,8 @@ import companyRoutes from './routes/companyRoutes';
 import productRoutes from './routes/productRoutes';
 import particularRoutes from './routes/particularRoutes';
 import accountRoutes from './routes/accountRoutes';
+import authRoutes from './routes/authRoutes';
+import { seedDefaultAdmin } from './controllers/authController';
 
 // Load environment variables
 dotenv.config();
@@ -17,8 +19,10 @@ const app: Application = express();
 const PORT = process.env.PORT || 5001;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5000';
 
-// Connect Database
-connectDB();
+// Connect Database & Seed default admin
+connectDB().then(() => {
+  seedDefaultAdmin();
+});
 
 // Middleware
 app.use(
@@ -47,6 +51,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
 });
 
 // API Routes
+app.use('/api/auth', authRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/companies', companyRoutes);
 app.use('/api/products', productRoutes);

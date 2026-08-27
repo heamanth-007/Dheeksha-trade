@@ -11,7 +11,7 @@ export const getParticulars = async (req: Request, res: Response, next: NextFunc
       filter.customerName = { $regex: new RegExp(`^${escapeRegex(customerName.trim())}$`, 'i') };
     }
 
-    const particulars = await Particular.find(filter).sort({ createdAt: -1 });
+    const particulars = await Particular.find(filter).sort({ createdAt: -1, _id: -1 });
     res.status(200).json({ success: true, count: particulars.length, data: particulars });
   } catch (error) {
     next(error);
