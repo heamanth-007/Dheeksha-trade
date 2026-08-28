@@ -65,7 +65,7 @@ export const generateBillHtml = (bill: BillPrintData): string => {
   const phone = bill.phone || '+91 98765 43210';
   const email = bill.email || 'info@dheekshatrade.com';
   const website = bill.website || 'www.dheekshatrade.com';
-  const transportName = bill.transport && bill.transport !== '-' ? bill.transport : 'VARMA TRANSPORT';
+  const transportName = bill.transport && bill.transport.trim() !== '' && bill.transport !== '-' ? bill.transport.trim() : '-';
 
   const productRowsHtml = (bill.products || []).map((item, idx) => {
     const numAmt = parseFloat(String(item.amount).replace(/,/g, '')) || 0;

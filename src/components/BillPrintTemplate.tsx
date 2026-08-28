@@ -95,7 +95,7 @@ export const BillPrintTemplate: React.FC<BillPrintTemplateProps> = ({ bill }) =>
   const phone = bill.phone || '+91 98765 43210';
   const email = bill.email || 'info@dheekshatrade.com';
   const website = bill.website || 'www.dheekshatrade.com';
-  const transportName = bill.transport && bill.transport !== '-' ? bill.transport : 'VARMA TRANSPORT';
+  const transportName = bill.transport && bill.transport.trim() !== '' && bill.transport !== '-' ? bill.transport.trim() : '-';
 
   const numItems = bill.products?.length || 0;
   const dynamicSpacerHeight = Math.max(220, 520 - numItems * 38);
