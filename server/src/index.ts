@@ -25,16 +25,40 @@ connectDB().then(() => {
 });
 
 // Middleware
+const allowedOrigins = [
+  CORS_ORIGIN,
+  'http://localhost:5000',
+  'http://127.0.0.1:5000',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:5174',
+  'http://127.0.0.1:5174',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+].filter(Boolean);
+
 app.use(
   cors({
-    origin: [
-      CORS_ORIGIN,
-      'http://localhost:5000',
-      'http://127.0.0.1:5000',
-      'http://localhost:5173',
-      'http://127.0.0.1:5173',
-    ],
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, curl, Postman)
+      if (!origin) return callback(null, true);
+
+      // Allow any localhost / 127.0.0.1 port (e.g. 5173, 5174, etc.) or local network IPs
+      const isLocalhost = /^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(origin);
+      if (isLocalhost || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Default fallback in development: permit all origins
+      if (process.env.NODE_ENV !== 'production') {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`CORS origin ${origin} not allowed`));
+    },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   })
 );
 app.use(express.json());
