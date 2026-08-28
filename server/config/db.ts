@@ -39,7 +39,7 @@ mongoose.connection.on('disconnected', () => {
   console.warn('[Database] MongoDB disconnected. Attempting reconnection...');
 });
 
-mongoose.connection.on('error', (err) => {
+mongoose.connection.on('error', (err: any) => {
   console.error('[Database Error] MongoDB connection error:', err);
 });
 

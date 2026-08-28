@@ -30,7 +30,7 @@ connectDB().then(() => {
 // Middleware
 const envOrigins = (process.env.CORS_ORIGIN || '')
   .split(',')
-  .map((o) => o.trim())
+  .map((o: string) => o.trim())
   .filter(Boolean);
 
 const allowedOrigins = [
@@ -47,7 +47,7 @@ const allowedOrigins = [
 
 app.use(
   cors({
-    origin: (origin, callback) => {
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
       // Allow requests with no origin (like mobile apps, curl, Postman)
       if (!origin) return callback(null, true);
 
