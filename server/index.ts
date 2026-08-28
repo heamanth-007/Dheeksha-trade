@@ -1,6 +1,12 @@
 import express, { type Application, type Request, type Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
+
+// Load environment variables from server directory and root directory
+dotenv.config({ path: path.join(__dirname, '.env') });
+dotenv.config();
+
 import { connectDB } from './config/db';
 import { errorHandler } from './middleware/errorHandler';
 
@@ -11,9 +17,6 @@ import particularRoutes from './routes/particularRoutes';
 import accountRoutes from './routes/accountRoutes';
 import authRoutes from './routes/authRoutes';
 import { seedDefaultAdmin } from './controllers/authController';
-
-// Load environment variables
-dotenv.config();
 
 const app: Application = express();
 const PORT = process.env.PORT || 5001;
