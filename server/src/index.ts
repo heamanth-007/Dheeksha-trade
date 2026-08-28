@@ -25,8 +25,13 @@ connectDB().then(() => {
 });
 
 // Middleware
+const envOrigins = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 const allowedOrigins = [
-  CORS_ORIGIN,
+  ...envOrigins,
   'http://localhost:5000',
   'http://127.0.0.1:5000',
   'http://localhost:5173',
@@ -35,7 +40,7 @@ const allowedOrigins = [
   'http://127.0.0.1:5174',
   'http://localhost:3000',
   'http://127.0.0.1:3000',
-].filter(Boolean);
+];
 
 app.use(
   cors({
@@ -43,13 +48,25 @@ app.use(
       // Allow requests with no origin (like mobile apps, curl, Postman)
       if (!origin) return callback(null, true);
 
-      // Allow any localhost / 127.0.0.1 port (e.g. 5173, 5174, etc.) or local network IPs
-      const isLocalhost = /^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(origin);
-      if (isLocalhost || allowedOrigins.includes(origin)) {
+      // Allow wildcard in CORS_ORIGIN
+      if (process.env.CORS_ORIGIN === '*' || allowedOrigins.includes('*')) {
         return callback(null, true);
       }
 
-      // Default fallback in development: permit all origins
+      // Allow any localhost / 127.0.0.1 port or local network IPs
+      const isLocalhost = /^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(origin);
+      
+      // Allow deployed domains (Vercel, Netlify, Render preview URLs)
+      const isTrustedDeployment =
+        origin.endsWith('.vercel.app') ||
+        origin.endsWith('.netlify.app') ||
+        origin.endsWith('.onrender.com');
+
+      if (isLocalhost || isTrustedDeployment || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Default fallback in non-production
       if (process.env.NODE_ENV !== 'production') {
         return callback(null, true);
       }
