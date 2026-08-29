@@ -4,10 +4,8 @@ import {
   Typography,
   Button,
   Paper,
-  Select,
-  MenuItem,
-  FormControl,
   TextField,
+  Autocomplete,
   Table,
   TableBody,
   TableCell,
@@ -18,7 +16,6 @@ import {
   Tooltip,
   CircularProgress,
   Chip,
-  type SelectChangeEvent,
 } from '@mui/material';
 import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
@@ -274,19 +271,6 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
       netBalance: totalCredit - totalDebit,
     };
   }, [accountDetails]);
-
-  // Subtab 1: Select Customer
-  const handleCustomerChange = (event: SelectChangeEvent) => {
-    const custId = event.target.value;
-    setSelectedCustomerId(custId);
-    const found = customerOptions.find((c) => c.id === custId);
-    if (found) {
-      setCurrentCustomerName(found.name);
-      setFilterCustomer(found.name);
-      setAddCreditCustomerName(found.name);
-      localStorage.setItem('dheeksha_active_customer', found.name);
-    }
-  };
 
   const handleSelectCustomerClick = () => {
     setActiveSubTab('Create Particular');
@@ -711,53 +695,52 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
               </Typography>
 
               <Box sx={{ width: { xs: '100%', sm: '380px', md: '420px' } }}>
-                <FormControl fullWidth size="small">
-                  <Select
-                    value={selectedCustomerId}
-                    onChange={handleCustomerChange}
-                    displayEmpty
-                    IconComponent={KeyboardArrowDownRoundedIcon}
-                    renderValue={(selected) => {
-                      if (!selected) {
-                        return (
-                          <Typography sx={{ fontSize: '13.5px', fontWeight: 500, color: '#64748B' }}>
-                            Select an option
-                          </Typography>
-                        );
-                      }
-                      const found = customerOptions.find((c) => c.id === selected);
-                      return (
-                        <Typography sx={{ fontSize: '13.5px', fontWeight: 600, color: '#0F172A' }}>
-                          {found ? found.name : currentCustomerName}
-                        </Typography>
-                      );
-                    }}
-                    sx={{
-                      height: '40px',
-                      borderRadius: '6px',
-                      backgroundColor: '#FFFFFF',
-                      fontSize: '13.5px',
-                      fontWeight: 500,
-                      color: '#0F172A',
-                      '& .MuiOutlinedInput-notchedOutline': {
-                        borderColor: '#CBD5E1',
-                      },
-                      '&:hover .MuiOutlinedInput-notchedOutline': {
-                        borderColor: '#94A3B8',
-                      },
-                      '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                        borderColor: '#0B4DB7',
-                        borderWidth: '1.5px',
-                      },
-                    }}
-                  >
-                    {customerOptions.map((opt) => (
-                      <MenuItem key={opt.id} value={opt.id} sx={{ fontSize: '13.5px', fontWeight: 500 }}>
-                        {opt.name}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                <Autocomplete
+                  fullWidth
+                  size="small"
+                  autoHighlight
+                  options={customerOptions}
+                  getOptionLabel={(option) => (typeof option === 'string' ? option : option.name || '')}
+                  isOptionEqualToValue={(option, val) => option.id === val.id || option.name === val.name}
+                  value={customerOptions.find((c) => c.id === selectedCustomerId) || null}
+                  onChange={(_, val) => {
+                    if (val) {
+                      setSelectedCustomerId(val.id);
+                      setCurrentCustomerName(val.name);
+                      setFilterCustomer(val.name);
+                      setAddCreditCustomerName(val.name);
+                      localStorage.setItem('dheeksha_active_customer', val.name);
+                    } else {
+                      setSelectedCustomerId('');
+                    }
+                  }}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      placeholder="Type or select customer..."
+                      sx={{
+                        backgroundColor: '#FFFFFF',
+                        borderRadius: '6px',
+                        '& .MuiOutlinedInput-root': {
+                          height: '40px',
+                          borderRadius: '6px',
+                          fontSize: '13.5px',
+                          fontWeight: 500,
+                          '& fieldset': {
+                            borderColor: '#CBD5E1',
+                          },
+                          '&:hover fieldset': {
+                            borderColor: '#94A3B8',
+                          },
+                          '&.Mui-focused fieldset': {
+                            borderColor: '#0B4DB7',
+                            borderWidth: '1.5px',
+                          },
+                        },
+                      }}
+                    />
+                  )}
+                />
 
                 <Box sx={{ mt: 3 }}>
                   <Button
@@ -839,36 +822,54 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
                   <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
                     Customer
                   </Typography>
-                  <FormControl fullWidth size="small">
-                    <Select
-                      value={currentCustomerName}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setCurrentCustomerName(val);
-                        localStorage.setItem('dheeksha_active_customer', val);
-                        const found = customerOptions.find((c) => c.name === val);
-                        if (found) setSelectedCustomerId(found.id);
-                      }}
-                      IconComponent={KeyboardArrowDownRoundedIcon}
-                      sx={{
-                        height: '36px',
-                        borderRadius: '6px',
-                        backgroundColor: '#FFFFFF',
-                        fontSize: '13px',
-                        fontWeight: 600,
-                        color: '#0F172A',
-                        '& .MuiOutlinedInput-notchedOutline': {
-                          borderColor: '#CBD5E1',
-                        },
-                      }}
-                    >
-                      {customerOptions.map((opt) => (
-                        <MenuItem key={opt.id} value={opt.name} sx={{ fontSize: '13px', fontWeight: 600 }}>
-                          {opt.name}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
+                  <Autocomplete
+                    fullWidth
+                    size="small"
+                    autoHighlight
+                    options={customerOptions}
+                    getOptionLabel={(option) => (typeof option === 'string' ? option : option.name || '')}
+                    isOptionEqualToValue={(option, val) => option.id === val.id || option.name === val.name}
+                    value={customerOptions.find((c) => c.name === currentCustomerName) || null}
+                    onChange={(_, val) => {
+                      const name = val ? val.name : '';
+                      setCurrentCustomerName(name);
+                      localStorage.setItem('dheeksha_active_customer', name);
+                      if (val) {
+                        setSelectedCustomerId(val.id);
+                        setFilterCustomer(val.name);
+                        setAddCreditCustomerName(val.name);
+                      } else {
+                        setSelectedCustomerId('');
+                      }
+                    }}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        placeholder="Search Customer..."
+                        sx={{
+                          backgroundColor: '#FFFFFF',
+                          borderRadius: '6px',
+                          '& .MuiOutlinedInput-root': {
+                            height: '36px',
+                            borderRadius: '6px',
+                            fontSize: '13px',
+                            fontWeight: 600,
+                            color: '#0F172A',
+                            '& fieldset': {
+                              borderColor: '#CBD5E1',
+                            },
+                            '&:hover fieldset': {
+                              borderColor: '#94A3B8',
+                            },
+                            '&.Mui-focused fieldset': {
+                              borderColor: '#0B4DB7',
+                              borderWidth: '1.5px',
+                            },
+                          },
+                        }}
+                      />
+                    )}
+                  />
                 </Box>
                 <Box>
                   <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
@@ -903,30 +904,43 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
                   <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
                     Company
                   </Typography>
-                  <FormControl fullWidth size="small">
-                    <Select
-                      value={company}
-                      onChange={(e) => setCompany(e.target.value)}
-                      IconComponent={KeyboardArrowDownRoundedIcon}
-                      sx={{
-                        height: '36px',
-                        borderRadius: '6px',
-                        backgroundColor: '#FFFFFF',
-                        fontSize: '13px',
-                        fontWeight: 500,
-                        color: '#0F172A',
-                        '& .MuiOutlinedInput-notchedOutline': {
-                          borderColor: '#CBD5E1',
-                        },
-                      }}
-                    >
-                      {companyOptions.map((opt) => (
-                        <MenuItem key={opt.id} value={opt.name} sx={{ fontSize: '13px', fontWeight: 500 }}>
-                          {opt.name}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
+                  <Autocomplete
+                    fullWidth
+                    size="small"
+                    autoHighlight
+                    options={companyOptions}
+                    getOptionLabel={(option) => (typeof option === 'string' ? option : option.name || '')}
+                    isOptionEqualToValue={(option, val) => option.id === val.id || option.name === val.name}
+                    value={companyOptions.find((c) => c.name === company) || null}
+                    onChange={(_, val) => setCompany(val ? val.name : '')}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        placeholder="Search Company..."
+                        sx={{
+                          backgroundColor: '#FFFFFF',
+                          borderRadius: '6px',
+                          '& .MuiOutlinedInput-root': {
+                            height: '36px',
+                            borderRadius: '6px',
+                            fontSize: '13px',
+                            fontWeight: 500,
+                            color: '#0F172A',
+                            '& fieldset': {
+                              borderColor: '#CBD5E1',
+                            },
+                            '&:hover fieldset': {
+                              borderColor: '#94A3B8',
+                            },
+                            '&.Mui-focused fieldset': {
+                              borderColor: '#0B4DB7',
+                              borderWidth: '1.5px',
+                            },
+                          },
+                        }}
+                      />
+                    )}
+                  />
                 </Box>
                 <Box>
                   <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
@@ -1215,30 +1229,43 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
                 borderBottom: '1px solid #E2E8F0',
               }}
             >
-              <FormControl size="small" sx={{ flex: { xs: '1 1 100%', sm: 2.5 }, minWidth: '160px' }}>
-                <Select
-                  value={selectedProduct}
-                  onChange={(e) => setSelectedProduct(e.target.value)}
-                  IconComponent={KeyboardArrowDownRoundedIcon}
-                  sx={{
-                    height: '36px',
-                    borderRadius: '6px',
-                    backgroundColor: '#FFFFFF',
-                    fontSize: '13px',
-                    fontWeight: 500,
-                    color: '#0F172A',
-                    '& .MuiOutlinedInput-notchedOutline': {
-                      borderColor: '#CBD5E1',
-                    },
-                  }}
-                >
-                  {productOptions.map((opt) => (
-                    <MenuItem key={opt.id} value={opt.name} sx={{ fontSize: '13px', fontWeight: 500 }}>
-                      {opt.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+              <Autocomplete
+                size="small"
+                autoHighlight
+                sx={{ flex: { xs: '1 1 100%', sm: 2.5 }, minWidth: '160px' }}
+                options={productOptions}
+                getOptionLabel={(option) => (typeof option === 'string' ? option : option.name || '')}
+                isOptionEqualToValue={(option, val) => option.id === val.id || option.name === val.name}
+                value={productOptions.find((p) => p.name === selectedProduct) || null}
+                onChange={(_, val) => setSelectedProduct(val ? val.name : '')}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    placeholder="Search Product..."
+                    sx={{
+                      backgroundColor: '#FFFFFF',
+                      borderRadius: '6px',
+                      '& .MuiOutlinedInput-root': {
+                        height: '36px',
+                        borderRadius: '6px',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        color: '#0F172A',
+                        '& fieldset': {
+                          borderColor: '#CBD5E1',
+                        },
+                        '&:hover fieldset': {
+                          borderColor: '#94A3B8',
+                        },
+                        '&.Mui-focused fieldset': {
+                          borderColor: '#0B4DB7',
+                          borderWidth: '1.5px',
+                        },
+                      },
+                    }}
+                  />
+                )}
+              />
 
               <TextField
                 size="small"
@@ -2089,33 +2116,43 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
                 >
                   Customer Name
                 </Typography>
-                <FormControl fullWidth size="small">
-                  <Select
-                    value={addCreditCustomerName || currentCustomerName}
-                    onChange={(e) => setAddCreditCustomerName(e.target.value)}
-                    IconComponent={KeyboardArrowDownRoundedIcon}
-                    sx={{
-                      height: '42px',
-                      borderRadius: '6px',
-                      backgroundColor: '#FFFFFF',
-                      fontSize: '13.5px',
-                      fontWeight: 600,
-                      color: '#0F172A',
-                      '& .MuiOutlinedInput-notchedOutline': {
-                        borderColor: '#CBD5E1',
-                      },
-                      '&:hover .MuiOutlinedInput-notchedOutline': {
-                        borderColor: '#94A3B8',
-                      },
-                    }}
-                  >
-                    {customerOptions.map((opt) => (
-                      <MenuItem key={opt.id} value={opt.name} sx={{ fontSize: '13.5px', fontWeight: 500 }}>
-                        {opt.name}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                <Autocomplete
+                  fullWidth
+                  size="small"
+                  autoHighlight
+                  options={customerOptions}
+                  getOptionLabel={(option) => (typeof option === 'string' ? option : option.name || '')}
+                  isOptionEqualToValue={(option, val) => option.id === val.id || option.name === val.name}
+                  value={customerOptions.find((c) => c.name === (addCreditCustomerName || currentCustomerName)) || null}
+                  onChange={(_, val) => setAddCreditCustomerName(val ? val.name : '')}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      placeholder="Search Customer..."
+                      sx={{
+                        backgroundColor: '#FFFFFF',
+                        borderRadius: '6px',
+                        '& .MuiOutlinedInput-root': {
+                          height: '42px',
+                          borderRadius: '6px',
+                          fontSize: '13.5px',
+                          fontWeight: 600,
+                          color: '#0F172A',
+                          '& fieldset': {
+                            borderColor: '#CBD5E1',
+                          },
+                          '&:hover fieldset': {
+                            borderColor: '#94A3B8',
+                          },
+                          '&.Mui-focused fieldset': {
+                            borderColor: '#0B4DB7',
+                            borderWidth: '1.5px',
+                          },
+                        },
+                      }}
+                    />
+                  )}
+                />
               </Box>
 
               {/* Company Name */}
@@ -2138,36 +2175,43 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
                 >
                   Company Name
                 </Typography>
-                <FormControl fullWidth size="small">
-                  <Select
-                    value={addCreditCompanyName}
-                    onChange={(e) => setAddCreditCompanyName(e.target.value)}
-                    IconComponent={KeyboardArrowDownRoundedIcon}
-                    sx={{
-                      height: '42px',
-                      borderRadius: '6px',
-                      backgroundColor: '#FFFFFF',
-                      fontSize: '13.5px',
-                      fontWeight: 500,
-                      color: '#0F172A',
-                      '& .MuiOutlinedInput-notchedOutline': {
-                        borderColor: '#CBD5E1',
-                      },
-                      '&:hover .MuiOutlinedInput-notchedOutline': {
-                        borderColor: '#94A3B8',
-                      },
-                      '& .MuiSelect-icon': {
-                        fontSize: '22px',
-                      },
-                    }}
-                  >
-                    {companyOptions.map((opt) => (
-                      <MenuItem key={opt.id} value={opt.name} sx={{ fontSize: '13.5px', fontWeight: 500 }}>
-                        {opt.name}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                <Autocomplete
+                  fullWidth
+                  size="small"
+                  autoHighlight
+                  options={companyOptions}
+                  getOptionLabel={(option) => (typeof option === 'string' ? option : option.name || '')}
+                  isOptionEqualToValue={(option, val) => option.id === val.id || option.name === val.name}
+                  value={companyOptions.find((c) => c.name === addCreditCompanyName) || null}
+                  onChange={(_, val) => setAddCreditCompanyName(val ? val.name : '')}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      placeholder="Search Company..."
+                      sx={{
+                        backgroundColor: '#FFFFFF',
+                        borderRadius: '6px',
+                        '& .MuiOutlinedInput-root': {
+                          height: '42px',
+                          borderRadius: '6px',
+                          fontSize: '13.5px',
+                          fontWeight: 500,
+                          color: '#0F172A',
+                          '& fieldset': {
+                            borderColor: '#CBD5E1',
+                          },
+                          '&:hover fieldset': {
+                            borderColor: '#94A3B8',
+                          },
+                          '&.Mui-focused fieldset': {
+                            borderColor: '#0B4DB7',
+                            borderWidth: '1.5px',
+                          },
+                        },
+                      }}
+                    />
+                  )}
+                />
               </Box>
 
               {/* Credit Amount */}

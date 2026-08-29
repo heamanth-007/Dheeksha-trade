@@ -20,9 +20,7 @@ import {
   DialogActions,
   TextField,
   Chip,
-  MenuItem,
-  Select,
-  FormControl,
+  Autocomplete,
 } from '@mui/material';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
@@ -1174,24 +1172,39 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
               <Typography sx={{ fontSize: '13px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
                 Company / Account
               </Typography>
-              <FormControl fullWidth size="small">
-                <Select
-                  value={paymentForm.companyName}
-                  onChange={(e) => setPaymentForm({ ...paymentForm, companyName: e.target.value })}
-                  sx={{ borderRadius: '6px', fontSize: '13.5px', fontWeight: 500 }}
-                >
-                  {companies.map((c) => (
-                    <MenuItem key={c._id || c.id} value={c.name} sx={{ fontSize: '13px' }}>
-                      {c.name}
-                    </MenuItem>
-                  ))}
-                  {companies.length === 0 && (
-                    <MenuItem value="General" sx={{ fontSize: '13px' }}>
-                      General
-                    </MenuItem>
-                  )}
-                </Select>
-              </FormControl>
+              <Autocomplete
+                fullWidth
+                size="small"
+                autoHighlight
+                options={companies.length > 0 ? companies.map((c) => c.name) : ['General']}
+                value={paymentForm.companyName || null}
+                onChange={(_, val) => setPaymentForm({ ...paymentForm, companyName: val || '' })}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    placeholder="Search or select company..."
+                    sx={{
+                      backgroundColor: '#FFFFFF',
+                      borderRadius: '6px',
+                      '& .MuiOutlinedInput-root': {
+                        fontSize: '13.5px',
+                        fontWeight: 500,
+                        borderRadius: '6px',
+                        '& fieldset': {
+                          borderColor: '#CBD5E1',
+                        },
+                        '&:hover fieldset': {
+                          borderColor: '#94A3B8',
+                        },
+                        '&.Mui-focused fieldset': {
+                          borderColor: '#0B4DB7',
+                          borderWidth: '1.5px',
+                        },
+                      },
+                    }}
+                  />
+                )}
+              />
             </Box>
 
             <Box>
