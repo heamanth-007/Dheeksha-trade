@@ -20,14 +20,13 @@ import { seedDefaultAdmin } from './controllers/authController';
 
 const app: Application = express();
 const PORT = process.env.PORT || 5001;
-const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5000';
 
 // Connect Database & Seed default admin
 connectDB().then(() => {
   seedDefaultAdmin();
 });
 
-// Middleware
+// Configure CORS Origins
 const envOrigins = (process.env.CORS_ORIGIN || '')
   .split(',')
   .map((o: string) => o.trim())
@@ -35,6 +34,7 @@ const envOrigins = (process.env.CORS_ORIGIN || '')
 
 const allowedOrigins = [
   ...envOrigins,
+  'https://dheeksha-trade-h2w2.vercel.app',
   'http://localhost:5000',
   'http://127.0.0.1:5000',
   'http://localhost:5173',
@@ -45,42 +45,46 @@ const allowedOrigins = [
   'http://127.0.0.1:3000',
 ];
 
-app.use(
-  cors({
-    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-      // Allow requests with no origin (like mobile apps, curl, Postman)
-      if (!origin) return callback(null, true);
+const corsOptions: cors.CorsOptions = {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    // Allow requests with no origin (like mobile apps, curl, Postman, server-to-server)
+    if (!origin) return callback(null, true);
 
-      // Allow wildcard in CORS_ORIGIN
-      if (process.env.CORS_ORIGIN === '*' || allowedOrigins.includes('*')) {
-        return callback(null, true);
-      }
+    // Allow wildcard in CORS_ORIGIN if specified
+    if (process.env.CORS_ORIGIN === '*' || allowedOrigins.includes('*')) {
+      return callback(null, true);
+    }
 
-      // Allow any localhost / 127.0.0.1 port or local network IPs
-      const isLocalhost = /^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(origin);
-      
-      // Allow deployed domains (Vercel, Netlify, Render preview URLs)
-      const isTrustedDeployment =
-        origin.endsWith('.vercel.app') ||
-        origin.endsWith('.netlify.app') ||
-        origin.endsWith('.onrender.com');
+    // Allow any localhost / 127.0.0.1 port or local network IPs
+    const isLocalhost = /^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(origin);
 
-      if (isLocalhost || isTrustedDeployment || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
+    // Allow deployed domains (*.vercel.app, *.netlify.app, *.onrender.com)
+    const isTrustedDeployment =
+      origin.endsWith('.vercel.app') ||
+      origin.endsWith('.netlify.app') ||
+      origin.endsWith('.onrender.com');
 
-      // Default fallback in non-production
-      if (process.env.NODE_ENV !== 'production') {
-        return callback(null, true);
-      }
+    if (isLocalhost || isTrustedDeployment || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
 
-      return callback(new Error(`CORS origin ${origin} not allowed`));
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  })
-);
+    // Fallback for non-production environments
+    if (process.env.NODE_ENV !== 'production') {
+      return callback(null, true);
+    }
+
+    console.warn(`[CORS Blocked] Origin not allowed: ${origin}`);
+    return callback(new Error(`CORS origin ${origin} not allowed`));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+};
+
+// Apply CORS middleware before all routes
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -91,6 +95,14 @@ app.get('/api/health', (_req: Request, res: Response) => {
     message: 'Dheeksha Trade API Server is running smoothly',
     port: PORT,
     timestamp: new Date().toISOString(),
+  });
+});
+
+app.get('/', (_req: Request, res: Response) => {
+  res.status(200).json({
+    status: 'OK',
+    service: 'Dheeksha Trade Backend API',
+    health: '/api/health',
   });
 });
 

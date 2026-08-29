@@ -1,26 +1,75 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api';
+/**
+ * Centralized API Service for Dheeksha Trade
+ * Automatically resolves and normalizes backend base URL from Vite environment variables.
+ */
+
+const getApiBaseUrl = (): string => {
+  // Check for standard VITE_API_URL or legacy VITE_API_BASE_URL
+  const rawUrl = (
+    import.meta.env.VITE_API_URL ||
+    import.meta.env.VITE_API_BASE_URL ||
+    ''
+  ).trim();
+
+  if (rawUrl) {
+    // Strip trailing slashes
+    const sanitized = rawUrl.replace(/\/+$/, '');
+    // Ensure /api path is present
+    return sanitized.endsWith('/api') ? sanitized : `${sanitized}/api`;
+  }
+
+  // Safe development fallback: ONLY used during local `vite dev`
+  if (import.meta.env.DEV) {
+    return 'http://localhost:5001/api';
+  }
+
+  // In production builds when no environment variable is provided,
+  // use relative '/api' endpoint rather than failing or targeting localhost
+  return '/api';
+};
+
+export const API_BASE_URL = getApiBaseUrl();
 
 export interface ApiResponse<T> {
   success: boolean;
   count?: number;
   data: T;
   error?: string;
+  message?: string;
 }
 
 // Generic Request Helper
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const url = `${API_BASE_URL}${endpoint}`;
-  const headers = {
+  const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const url = `${API_BASE_URL}${normalizedEndpoint}`;
+
+  // Retrieve auth token if stored
+  const token = typeof window !== 'undefined' ? localStorage.getItem('dheeksha_auth_token') : null;
+
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...(options.headers || {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...((options.headers as Record<string, string>) || {}),
   };
 
   try {
-    const response = await fetch(url, { ...options, headers });
-    const json = await response.json();
+    const response = await fetch(url, {
+      ...options,
+      headers,
+    });
+
+    let json: any = {};
+    const text = await response.text();
+    if (text) {
+      try {
+        json = JSON.parse(text);
+      } catch {
+        json = { error: text };
+      }
+    }
 
     if (!response.ok) {
-      throw new Error(json.error || `HTTP error! Status: ${response.status}`);
+      throw new Error(json.error || json.message || `HTTP error! Status: ${response.status}`);
     }
 
     return json.data !== undefined ? json.data : json;
@@ -84,4 +133,9 @@ export const AuthApi = {
       body: JSON.stringify(credentials),
     }),
   getMe: () => request<any>('/auth/me'),
+};
+
+// Health Check API
+export const HealthApi = {
+  check: () => request<{ status: string; message: string; timestamp: string }>('/health'),
 };
