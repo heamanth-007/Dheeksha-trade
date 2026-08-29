@@ -1,4 +1,4 @@
-import { useState, useEffect, type FC } from 'react';
+import { useState, useEffect, useMemo, type FC } from 'react';
 import {
   Box,
   Typography,
@@ -18,7 +18,11 @@ import {
   DialogActions,
   TextField,
   CircularProgress,
+  InputBase,
 } from '@mui/material';
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
+import ClearRoundedIcon from '@mui/icons-material/ClearRounded';
+import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import ModeEditOutlineRoundedIcon from '@mui/icons-material/ModeEditOutlineRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import { ProductsApi } from '../services/api';
@@ -33,6 +37,7 @@ export interface ProductItem {
 export const ProductsPage: FC = () => {
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Add / Edit Modal State
   const [openModal, setOpenModal] = useState(false);
@@ -55,6 +60,15 @@ export const ProductsPage: FC = () => {
   useEffect(() => {
     fetchProducts();
   }, []);
+
+  const filteredProducts = useMemo(() => {
+    if (!searchTerm.trim()) return products;
+    const term = searchTerm.toLowerCase().trim();
+    return products.filter((p) =>
+      p.name.toLowerCase().includes(term) ||
+      String(p.slNo).includes(term)
+    );
+  }, [products, searchTerm]);
 
   const handleOpenAdd = () => {
     setEditingProduct(null);
@@ -136,44 +150,124 @@ export const ProductsPage: FC = () => {
             px: { xs: 2, sm: 3 },
             py: 1.5,
             display: 'flex',
-            alignItems: 'center',
+            flexDirection: { xs: 'column', sm: 'row' },
+            alignItems: { xs: 'stretch', sm: 'center' },
             justifyContent: 'space-between',
-            minHeight: '52px',
+            gap: 1.5,
+            minHeight: '56px',
           }}
         >
-          <Typography
-            sx={{
-              color: '#FFFFFF',
-              fontSize: '16px',
-              fontWeight: 700,
-              letterSpacing: '-0.01em',
-            }}
-          >
-            View Product
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Typography
+              sx={{
+                color: '#FFFFFF',
+                fontSize: '16px',
+                fontWeight: 700,
+                letterSpacing: '-0.01em',
+              }}
+            >
+              View Product
+            </Typography>
+            <Typography
+              sx={{
+                color: 'rgba(255, 255, 255, 0.8)',
+                fontSize: '12px',
+                fontWeight: 600,
+                backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                px: 1.2,
+                py: 0.3,
+                borderRadius: '12px',
+              }}
+            >
+              {filteredProducts.length} {filteredProducts.length === 1 ? 'item' : 'items'}
+            </Typography>
+          </Box>
 
-          <Button
-            variant="contained"
-            disableElevation
-            onClick={handleOpenAdd}
+          <Box
             sx={{
-              backgroundColor: '#FFFFFF',
-              color: '#0B4DB7',
-              fontSize: '13px',
-              fontWeight: 700,
-              textTransform: 'none',
-              px: 2.2,
-              py: 0.75,
-              borderRadius: '6px',
-              minWidth: 'auto',
-              lineHeight: 1.2,
-              '&:hover': {
-                backgroundColor: '#F8FAFC',
-              },
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1.5,
+              flexWrap: { xs: 'wrap', sm: 'nowrap' },
             }}
           >
-            Add Product
-          </Button>
+            {/* Search Box */}
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                backgroundColor: '#FFFFFF',
+                borderRadius: '6px',
+                px: 1.2,
+                height: '36px',
+                width: { xs: '100%', sm: '240px' },
+                boxSizing: 'border-box',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <SearchRoundedIcon
+                sx={{
+                  color: '#64748B',
+                  fontSize: 19,
+                  mr: 0.8,
+                  flexShrink: 0,
+                }}
+              />
+              <InputBase
+                placeholder="Search products..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                sx={{
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  color: '#0F172A',
+                  width: '100%',
+                  '& input': {
+                    p: 0,
+                    '&::placeholder': {
+                      color: '#94A3B8',
+                      opacity: 1,
+                    },
+                  },
+                }}
+              />
+              {searchTerm && (
+                <IconButton
+                  size="small"
+                  onClick={() => setSearchTerm('')}
+                  sx={{ p: 0.4, color: '#94A3B8', '&:hover': { color: '#64748B' } }}
+                >
+                  <ClearRoundedIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              )}
+            </Box>
+
+            {/* Add Product Button */}
+            <Button
+              variant="contained"
+              disableElevation
+              onClick={handleOpenAdd}
+              startIcon={<AddRoundedIcon sx={{ fontSize: 18 }} />}
+              sx={{
+                backgroundColor: '#FFFFFF',
+                color: '#0B4DB7',
+                fontSize: '13px',
+                fontWeight: 700,
+                textTransform: 'none',
+                px: 2,
+                height: '36px',
+                borderRadius: '6px',
+                minWidth: 'auto',
+                whiteSpace: 'nowrap',
+                '&:hover': {
+                  backgroundColor: '#F8FAFC',
+                },
+              }}
+            >
+              Add Product
+            </Button>
+          </Box>
         </Box>
 
         {/* Table Container */}
@@ -247,15 +341,30 @@ export const ProductsPage: FC = () => {
                     <CircularProgress size={32} sx={{ color: '#0B4DB7' }} />
                   </TableCell>
                 </TableRow>
-              ) : products.length === 0 ? (
+              ) : filteredProducts.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={4} align="center" sx={{ py: 6, color: '#64748B' }}>
-                    No products found. Click "Add Product" to add one.
+                    {searchTerm ? (
+                      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                        <Typography sx={{ fontSize: '14px', color: '#64748B', fontWeight: 500 }}>
+                          No products matching "{searchTerm}" found.
+                        </Typography>
+                        <Button
+                          size="small"
+                          onClick={() => setSearchTerm('')}
+                          sx={{ textTransform: 'none', color: '#0B4DB7', fontWeight: 600 }}
+                        >
+                          Clear Search
+                        </Button>
+                      </Box>
+                    ) : (
+                      'No products found. Click "Add Product" to add one.'
+                    )}
                   </TableCell>
                 </TableRow>
               ) : (
-                products.map((product, index) => {
-                  const isLast = index === products.length - 1;
+                filteredProducts.map((product, index) => {
+                  const isLast = index === filteredProducts.length - 1;
                   return (
                     <TableRow
                       key={product._id || product.id || index}
