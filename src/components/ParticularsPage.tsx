@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, type FC } from 'react';
+import { useState, useEffect, useMemo, useRef, type FC } from 'react';
 import {
   Box,
   Typography,
@@ -16,6 +16,12 @@ import {
   Tooltip,
   CircularProgress,
   Chip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Snackbar,
+  Alert,
 } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
@@ -24,6 +30,10 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded';
 import AccountBalanceWalletRoundedIcon from '@mui/icons-material/AccountBalanceWalletRounded';
+import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
+import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import {
   CustomersApi,
   CompaniesApi,
@@ -131,6 +141,27 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
   // Bill Print Modal State
   const [selectedBillForPrint, setSelectedBillForPrint] = useState<BillPrintData | null>(null);
   const [printModalOpen, setPrintModalOpen] = useState(false);
+
+  // PDF Upload & Preview State (under 1 MB)
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadTargetBillId, setUploadTargetBillId] = useState<string | null>(null);
+  const [uploadingBillId, setUploadingBillId] = useState<string | null>(null);
+  const [pdfPreviewModal, setPdfPreviewModal] = useState<{
+    open: boolean;
+    url: string;
+    name: string;
+    id: string;
+    billNo?: string;
+  } | null>(null);
+  const [pdfToast, setPdfToast] = useState<{
+    open: boolean;
+    message: string;
+    severity: 'success' | 'error' | 'info';
+  }>({
+    open: false,
+    message: '',
+    severity: 'success',
+  });
 
   // Automatically calculate total case count from added product rows
   useEffect(() => {
@@ -558,6 +589,146 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
       }
     } catch (err) {
       console.error('Failed to print:', err);
+    }
+  };
+
+  // PDF Upload Handlers (Under 1 MB Limit)
+  const MAX_PDF_SIZE_BYTES = 1 * 1024 * 1024; // 1 MB (1,048,576 bytes)
+
+  const handleTriggerPdfUpload = (id: string) => {
+    setUploadTargetBillId(id);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  };
+
+  const handlePdfFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const targetId = uploadTargetBillId;
+    if (!file || !targetId) return;
+
+    // Reset input so same file can be selected again if needed
+    e.target.value = '';
+
+    // 1. Verify file type is PDF
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    if (!isPdf) {
+      setPdfToast({
+        open: true,
+        message: 'Invalid file format. Please upload a valid PDF (.pdf) file only.',
+        severity: 'error',
+      });
+      return;
+    }
+
+    // 2. Verify file size is under 1 MB
+    if (file.size > MAX_PDF_SIZE_BYTES) {
+      const sizeInMb = (file.size / (1024 * 1024)).toFixed(2);
+      setPdfToast({
+        open: true,
+        message: `File size (${sizeInMb} MB) exceeds 1 MB limit. Please select a PDF under 1 MB.`,
+        severity: 'error',
+      });
+      return;
+    }
+
+    try {
+      setUploadingBillId(targetId);
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const base64Data = reader.result as string;
+          await ParticularsApi.uploadPdf(targetId, base64Data, file.name);
+
+          // Update local state in particularDetails
+          setParticularDetails((prev) =>
+            prev.map((p) => {
+              const pId = p._id || p.id;
+              if (pId === targetId) {
+                return { ...p, pdfData: base64Data, pdfName: file.name };
+              }
+              return p;
+            })
+          );
+
+          setPdfToast({
+            open: true,
+            message: `PDF "${file.name}" uploaded successfully!`,
+            severity: 'success',
+          });
+        } catch (uploadErr) {
+          console.error('Failed to save PDF to server:', uploadErr);
+          setPdfToast({
+            open: true,
+            message: 'Failed to upload PDF. Please try again.',
+            severity: 'error',
+          });
+        } finally {
+          setUploadingBillId(null);
+        }
+      };
+
+      reader.onerror = () => {
+        setUploadingBillId(null);
+        setPdfToast({
+          open: true,
+          message: 'Error reading PDF file.',
+          severity: 'error',
+        });
+      };
+
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Failed to initiate upload:', err);
+      setUploadingBillId(null);
+    }
+  };
+
+  const handleOpenPdfPreview = (row: any) => {
+    const rowId = row._id || row.id || '';
+    if (!row.pdfData) {
+      handleTriggerPdfUpload(rowId);
+      return;
+    }
+
+    setPdfPreviewModal({
+      open: true,
+      url: row.pdfData,
+      name: row.pdfName || `Bill-${row.billNo || 'document'}.pdf`,
+      id: rowId,
+      billNo: row.billNo,
+    });
+  };
+
+  const handleDeleteAttachedPdf = async (id: string) => {
+    if (!window.confirm('Are you sure you want to remove the attached PDF from this bill?')) return;
+    try {
+      await ParticularsApi.deletePdf(id);
+      setParticularDetails((prev) =>
+        prev.map((p) => {
+          const pId = p._id || p.id;
+          if (pId === id) {
+            return { ...p, pdfData: '', pdfName: '' };
+          }
+          return p;
+        })
+      );
+      if (pdfPreviewModal?.id === id) {
+        setPdfPreviewModal(null);
+      }
+      setPdfToast({
+        open: true,
+        message: 'Attached PDF deleted successfully.',
+        severity: 'success',
+      });
+    } catch (err) {
+      console.error('Failed to delete attached PDF:', err);
+      setPdfToast({
+        open: true,
+        message: 'Failed to delete attached PDF.',
+        severity: 'error',
+      });
     }
   };
 
@@ -1907,7 +2078,7 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
                   <TableCell align="center" sx={{ py: 1.4, px: 1.5, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', letterSpacing: '0.04em', borderBottom: '1px solid #E2E8F0', borderRight: '1px solid #E2E8F0', width: '120px' }}>
                     TRANSPORT
                   </TableCell>
-                  <TableCell align="center" sx={{ py: 1.4, px: 1.5, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', letterSpacing: '0.04em', borderBottom: '1px solid #E2E8F0', width: '110px' }}>
+                  <TableCell align="center" sx={{ py: 1.4, px: 1.5, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', letterSpacing: '0.04em', borderBottom: '1px solid #E2E8F0', width: '150px' }}>
                     ACTION
                   </TableCell>
                 </TableRow>
@@ -1934,6 +2105,8 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
                     const discStr = row.discount && parseFloat(row.discount) > 0 ? (parseFloat(row.discount) <= 100 ? `${row.discount}%` : `₹${row.discount}`) : '-';
                     const packStr = row.packing && parseFloat(row.packing) > 0 ? (parseFloat(row.packing) <= 100 ? `${row.packing}%` : `₹${row.packing}`) : '-';
                     const taxStr = row.tax && parseFloat(row.tax) > 0 ? (parseFloat(row.tax) <= 100 ? `${row.tax}%` : `₹${row.tax}`) : '-';
+                    const hasPdf = Boolean(row.pdfData && row.pdfData.trim() !== '');
+                    const isUploading = uploadingBillId === rowId;
 
                     return (
                       <TableRow
@@ -2009,6 +2182,40 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
                                 }}
                               >
                                 <PrintOutlinedIcon sx={{ fontSize: 14 }} />
+                              </IconButton>
+                            </Tooltip>
+
+                            {/* PDF Upload / View Button (Under 1 MB) */}
+                            <Tooltip
+                              title={
+                                hasPdf
+                                  ? `View PDF (${row.pdfName || 'Attached Document'})`
+                                  : 'Upload PDF (Under 1 MB)'
+                              }
+                              arrow
+                            >
+                              <IconButton
+                                size="small"
+                                onClick={() => (hasPdf ? handleOpenPdfPreview(row) : handleTriggerPdfUpload(rowId))}
+                                disabled={isUploading}
+                                sx={{
+                                  backgroundColor: hasPdf ? '#16A34A' : '#6366F1',
+                                  color: '#FFFFFF',
+                                  borderRadius: '4px',
+                                  width: '24px',
+                                  height: '22px',
+                                  p: 0,
+                                  '&:hover': { backgroundColor: hasPdf ? '#15803D' : '#4F46E5' },
+                                  '&.Mui-disabled': { backgroundColor: '#CBD5E1', color: '#FFFFFF' },
+                                }}
+                              >
+                                {isUploading ? (
+                                  <CircularProgress size={12} sx={{ color: '#FFFFFF' }} />
+                                ) : hasPdf ? (
+                                  <PictureAsPdfRoundedIcon sx={{ fontSize: 14 }} />
+                                ) : (
+                                  <UploadFileRoundedIcon sx={{ fontSize: 14 }} />
+                                )}
                               </IconButton>
                             </Tooltip>
 
@@ -2344,12 +2551,194 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
           </Paper>
         </Box>
       )}
+      {/* Hidden File Input for PDF Upload (Under 1 MB) */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept="application/pdf"
+        style={{ display: 'none' }}
+        onChange={handlePdfFileChange}
+      />
+
+      {/* PDF Document Preview & Management Modal */}
+      <Dialog
+        open={Boolean(pdfPreviewModal?.open)}
+        onClose={() => setPdfPreviewModal(null)}
+        maxWidth="md"
+        fullWidth
+        slotProps={{
+          paper: {
+            sx: {
+              borderRadius: '12px',
+              overflow: 'hidden',
+              height: '80vh',
+              display: 'flex',
+              flexDirection: 'column',
+            },
+          },
+        }}
+      >
+        <DialogTitle
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            backgroundColor: '#0B4DB7',
+            color: '#FFFFFF',
+            py: 1.5,
+            px: 2.5,
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <PictureAsPdfRoundedIcon sx={{ fontSize: 22, color: '#FFFFFF' }} />
+            <Typography sx={{ fontSize: '15px', fontWeight: 700, color: '#FFFFFF' }}>
+              {pdfPreviewModal?.name || 'Attached PDF Document'}
+            </Typography>
+            {pdfPreviewModal?.billNo && (
+              <Chip
+                label={`Bill #${pdfPreviewModal.billNo}`}
+                size="small"
+                sx={{
+                  backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                  color: '#FFFFFF',
+                  fontWeight: 600,
+                  fontSize: '11px',
+                  height: '20px',
+                }}
+              />
+            )}
+          </Box>
+          <IconButton
+            size="small"
+            onClick={() => setPdfPreviewModal(null)}
+            sx={{ color: '#FFFFFF', '&:hover': { backgroundColor: 'rgba(255,255,255,0.1)' } }}
+          >
+            <CloseRoundedIcon sx={{ fontSize: 20 }} />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent sx={{ p: 0, flex: 1, backgroundColor: '#F1F5F9' }}>
+          {pdfPreviewModal?.url ? (
+            <iframe
+              src={pdfPreviewModal.url}
+              title="PDF Preview"
+              style={{
+                width: '100%',
+                height: '100%',
+                border: 'none',
+                display: 'block',
+              }}
+            />
+          ) : (
+            <Box
+              sx={{
+                height: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#64748B',
+              }}
+            >
+              <Typography>No PDF available</Typography>
+            </Box>
+          )}
+        </DialogContent>
+
+        <DialogActions
+          sx={{
+            px: 2.5,
+            py: 1.5,
+            backgroundColor: '#FFFFFF',
+            borderTop: '1px solid #E2E8F0',
+            justifyContent: 'space-between',
+          }}
+        >
+          <Button
+            variant="outlined"
+            color="error"
+            size="small"
+            startIcon={<DeleteOutlineRoundedIcon sx={{ fontSize: 16 }} />}
+            onClick={() => pdfPreviewModal?.id && handleDeleteAttachedPdf(pdfPreviewModal.id)}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 600,
+              fontSize: '12.5px',
+              borderRadius: '6px',
+            }}
+          >
+            Delete PDF
+          </Button>
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<UploadFileRoundedIcon sx={{ fontSize: 16 }} />}
+              onClick={() => {
+                const billId = pdfPreviewModal?.id;
+                setPdfPreviewModal(null);
+                if (billId) handleTriggerPdfUpload(billId);
+              }}
+              sx={{
+                textTransform: 'none',
+                fontWeight: 600,
+                fontSize: '12.5px',
+                borderRadius: '6px',
+                color: '#0B4DB7',
+                borderColor: '#BFDBFE',
+              }}
+            >
+              Replace PDF
+            </Button>
+
+            <Button
+              variant="contained"
+              disableElevation
+              size="small"
+              startIcon={<DownloadRoundedIcon sx={{ fontSize: 16 }} />}
+              component="a"
+              href={pdfPreviewModal?.url}
+              download={pdfPreviewModal?.name || 'bill-document.pdf'}
+              sx={{
+                backgroundColor: '#0B4DB7',
+                color: '#FFFFFF',
+                textTransform: 'none',
+                fontWeight: 700,
+                fontSize: '12.5px',
+                borderRadius: '6px',
+                '&:hover': { backgroundColor: '#083B8D' },
+              }}
+            >
+              Download PDF
+            </Button>
+          </Box>
+        </DialogActions>
+      </Dialog>
+
       {/* Bill Print & Preview Modal */}
       <BillPrintModal
         open={printModalOpen}
         onClose={() => setPrintModalOpen(false)}
         bill={selectedBillForPrint}
       />
+
+      {/* Toast Notification for PDF Uploads */}
+      <Snackbar
+        open={pdfToast.open}
+        autoHideDuration={4000}
+        onClose={() => setPdfToast((prev) => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={() => setPdfToast((prev) => ({ ...prev, open: false }))}
+          severity={pdfToast.severity}
+          variant="filled"
+          sx={{ width: '100%', borderRadius: '8px', fontWeight: 600, fontSize: '13px' }}
+        >
+          {pdfToast.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };
+

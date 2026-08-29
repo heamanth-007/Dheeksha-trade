@@ -20,6 +20,9 @@ export interface IParticular extends Document {
   amount: string;
   total: string;
   date: string;
+  pdfData?: string;
+  pdfName?: string;
+  pdfPublicId?: string;
   products: IParticularProductItem[];
   createdAt: Date;
   updatedAt: Date;
@@ -46,6 +49,9 @@ const ParticularSchema: Schema = new Schema(
     amount: { type: String, default: '0.00' },
     total: { type: String, default: '0.00' },
     date: { type: String, required: true },
+    pdfData: { type: String, default: '' },
+    pdfName: { type: String, default: '' },
+    pdfPublicId: { type: String, default: '' },
     products: [ParticularProductItemSchema],
   },
   { timestamps: true }

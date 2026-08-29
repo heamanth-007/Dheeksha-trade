@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { Particular } from '../models/Particular';
 import { AccountLedger } from '../models/AccountLedger';
 import { escapeRegex, recalculateCustomerBalance } from '../utils/ledgerUtils';
+import { isCloudinaryConfigured, uploadToCloudinary, deleteFromCloudinary } from '../config/cloudinary';
 
 export const getParticulars = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -133,10 +134,15 @@ export const deleteParticular = async (req: Request, res: Response, next: NextFu
 
     const customerName = particular.customerName;
 
-    // 1. Delete Particular
+    // 1. Delete associated Cloudinary asset if present
+    if (particular.pdfPublicId && isCloudinaryConfigured()) {
+      await deleteFromCloudinary(particular.pdfPublicId);
+    }
+
+    // 2. Delete Particular Document
     await Particular.findByIdAndDelete(req.params.id);
 
-    // 2. Cascade Delete: Delete matching AccountLedger entry comprehensively
+    // 3. Cascade Delete: Delete matching AccountLedger entry comprehensively
     const orConditions: any[] = [
       { particularId: String(req.params.id) },
       { particularId: String(particular._id) },
@@ -155,7 +161,7 @@ export const deleteParticular = async (req: Request, res: Response, next: NextFu
 
     await AccountLedger.deleteMany({ $or: orConditions });
 
-    // 3. Recalculate balance for this customer
+    // 4. Recalculate balance for this customer
     await recalculateCustomerBalance(customerName);
 
     res.status(200).json({ success: true, data: {} });
@@ -164,3 +170,95 @@ export const deleteParticular = async (req: Request, res: Response, next: NextFu
   }
 };
 
+export const uploadParticularPdf = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { pdfData, pdfName } = req.body;
+
+    if (!pdfData) {
+      res.status(400).json({ success: false, error: 'PDF data is required' });
+      return;
+    }
+
+    const existingParticular = await Particular.findById(id);
+    if (!existingParticular) {
+      res.status(404).json({ success: false, error: 'Particular bill not found' });
+      return;
+    }
+
+    if (!isCloudinaryConfigured()) {
+      console.error('[Cloudinary Error] Missing Cloudinary credentials in server/.env');
+      res.status(400).json({
+        success: false,
+        error:
+          'Cloudinary is not configured. Please fill in CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET in server/.env',
+      });
+      return;
+    }
+
+    // Delete previous Cloudinary file if it exists
+    if (existingParticular.pdfPublicId) {
+      await deleteFromCloudinary(existingParticular.pdfPublicId);
+    }
+
+    // Upload to Cloudinary CDN
+    const cloudRes = await uploadToCloudinary(
+      pdfData,
+      'dheeksha_trade/bills',
+      pdfName || `Bill-${existingParticular.billNo || 'document'}`
+    );
+
+    // Save Cloudinary secure URL and public_id into MongoDB document
+    existingParticular.pdfData = cloudRes.secure_url;
+    existingParticular.pdfName = pdfName || 'bill-document.pdf';
+    existingParticular.pdfPublicId = cloudRes.public_id;
+    await existingParticular.save();
+
+    console.log(`=============================================`);
+    console.log(`[Cloudinary Upload Success]`);
+    console.log(` Bill No:   ${existingParticular.billNo}`);
+    console.log(` File Name: ${existingParticular.pdfName}`);
+    console.log(` Public ID: ${cloudRes.public_id}`);
+    console.log(` CDN URL:   ${cloudRes.secure_url}`);
+    console.log(`=============================================`);
+
+    res.status(200).json({
+      success: true,
+      message: 'PDF uploaded to Cloudinary successfully',
+      data: existingParticular,
+    });
+  } catch (error: any) {
+    console.error('[Cloudinary Upload Error]:', error);
+    res.status(500).json({
+      success: false,
+      error: error?.message || 'Failed to upload PDF to Cloudinary',
+    });
+  }
+};
+
+export const deleteParticularPdf = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const particular = await Particular.findById(id);
+
+    if (!particular) {
+      res.status(404).json({ success: false, error: 'Particular bill not found' });
+      return;
+    }
+
+    // Delete from Cloudinary if public_id exists
+    if (particular.pdfPublicId && isCloudinaryConfigured()) {
+      await deleteFromCloudinary(particular.pdfPublicId);
+      console.log(`[Cloudinary Delete] Removed asset: ${particular.pdfPublicId}`);
+    }
+
+    particular.pdfData = '';
+    particular.pdfName = '';
+    particular.pdfPublicId = '';
+    await particular.save();
+
+    res.status(200).json({ success: true, message: 'PDF deleted successfully', data: particular });
+  } catch (error) {
+    next(error);
+  }
+};

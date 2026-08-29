@@ -114,6 +114,15 @@ export const ParticularsApi = {
   getById: (id: string) => request<any>(`/particulars/${id}`),
   create: (data: any) => request<any>('/particulars', { method: 'POST', body: JSON.stringify(data) }),
   delete: (id: string) => request<any>(`/particulars/${id}`, { method: 'DELETE' }),
+  uploadPdf: (id: string, pdfData: string, pdfName: string) =>
+    request<any>(`/particulars/${id}/pdf`, {
+      method: 'POST',
+      body: JSON.stringify({ pdfData, pdfName }),
+    }),
+  deletePdf: (id: string) =>
+    request<any>(`/particulars/${id}/pdf`, {
+      method: 'DELETE',
+    }),
 };
 
 // Account / Ledger API
