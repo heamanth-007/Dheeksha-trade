@@ -19,7 +19,7 @@ import authRoutes from './routes/authRoutes';
 import { seedDefaultAdmin } from './controllers/authController';
 
 const app: Application = express();
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || 5004;
 
 // Connect Database & Seed default admin
 connectDB().then(() => {
@@ -34,7 +34,6 @@ const envOrigins = (process.env.CORS_ORIGIN || '')
 
 const allowedOrigins = [
   ...envOrigins,
-  'https://dheeksha-trade-h2w2.vercel.app',
   'http://localhost:5000',
   'http://127.0.0.1:5000',
   'http://localhost:5173',
@@ -58,13 +57,7 @@ const corsOptions: cors.CorsOptions = {
     // Allow any localhost / 127.0.0.1 port or local network IPs
     const isLocalhost = /^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(origin);
 
-    // Allow deployed domains (*.vercel.app, *.netlify.app, *.onrender.com)
-    const isTrustedDeployment =
-      origin.endsWith('.vercel.app') ||
-      origin.endsWith('.netlify.app') ||
-      origin.endsWith('.onrender.com');
-
-    if (isLocalhost || isTrustedDeployment || allowedOrigins.includes(origin)) {
+    if (isLocalhost || allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
 
