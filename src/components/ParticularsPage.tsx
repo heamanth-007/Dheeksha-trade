@@ -17,7 +17,6 @@ import {
   CircularProgress,
   Chip,
 } from '@mui/material';
-import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
 import PrintOutlinedIcon from '@mui/icons-material/PrintOutlined';
