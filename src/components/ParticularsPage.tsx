@@ -34,6 +34,7 @@ import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
+import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
 import {
   CustomersApi,
   CompaniesApi,
@@ -2669,7 +2670,27 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
             Delete PDF
           </Button>
 
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, flexWrap: 'wrap' }}>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<OpenInNewRoundedIcon sx={{ fontSize: 16 }} />}
+              component="a"
+              href={pdfPreviewModal?.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              sx={{
+                textTransform: 'none',
+                fontWeight: 600,
+                fontSize: '12.5px',
+                borderRadius: '6px',
+                color: '#475569',
+                borderColor: '#CBD5E1',
+              }}
+            >
+              Open in New Tab
+            </Button>
+
             <Button
               variant="outlined"
               size="small"
@@ -2699,6 +2720,8 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
               component="a"
               href={pdfPreviewModal?.url}
               download={pdfPreviewModal?.name || 'bill-document.pdf'}
+              target="_blank"
+              rel="noopener noreferrer"
               sx={{
                 backgroundColor: '#0B4DB7',
                 color: '#FFFFFF',

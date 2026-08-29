@@ -1,7 +1,13 @@
 import { v2 as cloudinary } from 'cloudinary';
+import dotenv from 'dotenv';
+import path from 'path';
 
 // Configure Cloudinary with environment variables
 const initCloudinary = () => {
+  // Always ensure fresh .env is loaded from server directory & root
+  dotenv.config({ path: path.join(__dirname, '..', '.env') });
+  dotenv.config();
+
   const cloudinaryUrl = (process.env.CLOUDINARY_URL || '').trim();
   const cloudName = (process.env.CLOUDINARY_CLOUD_NAME || '').trim();
   const apiKey = (process.env.CLOUDINARY_API_KEY || '').trim();
@@ -28,6 +34,8 @@ initCloudinary();
  * Checks whether Cloudinary credentials are fully provided in environment
  */
 export const isCloudinaryConfigured = (): boolean => {
+  initCloudinary();
+
   const cloudinaryUrl = (process.env.CLOUDINARY_URL || '').trim();
   if (cloudinaryUrl) return true;
 
