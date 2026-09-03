@@ -27,6 +27,7 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
 import PrintOutlinedIcon from '@mui/icons-material/PrintOutlined';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import ModeEditOutlineRoundedIcon from '@mui/icons-material/ModeEditOutlineRounded';
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded';
 import AccountBalanceWalletRoundedIcon from '@mui/icons-material/AccountBalanceWalletRounded';
@@ -44,7 +45,8 @@ import {
 } from '../services/api';
 import { BillPrintModal } from './BillPrintModal';
 import type { BillPrintData } from './BillPrintTemplate';
-import { printBillDirectly } from '../utils/printUtils';
+import { printBillDirectly, printLedgerStatementDirectly, printParticularsListDirectly } from '../utils/printUtils';
+import { DateRangePrintModal } from './DateRangePrintModal';
 
 export type ParticularSubTab =
   | 'Select Customer'
@@ -142,6 +144,43 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
   // Bill Print Modal State
   const [selectedBillForPrint, setSelectedBillForPrint] = useState<BillPrintData | null>(null);
   const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [openAccountDateModal, setOpenAccountDateModal] = useState(false);
+  const [openParticularDateModal, setOpenParticularDateModal] = useState(false);
+
+  // Edit Particular Modal State
+  const [openEditParticularModal, setOpenEditParticularModal] = useState(false);
+  const [editingParticularId, setEditingParticularId] = useState<string | null>(null);
+  const [editBillForm, setEditBillForm] = useState<{
+    billNo: string;
+    date: string;
+    customerName: string;
+    companyName: string;
+    transport: string;
+    caseCount: string;
+    discount: string;
+    packing: string;
+    tax: string;
+    products: Array<{
+      id?: string;
+      particular: string;
+      quantity: string;
+      rate: string;
+      pktUnit: string;
+      amount: string;
+    }>;
+  }>({
+    billNo: '',
+    date: '',
+    customerName: '',
+    companyName: '',
+    transport: '',
+    caseCount: '0',
+    discount: '0',
+    packing: '0',
+    tax: '0',
+    products: [],
+  });
+  const [editBillLoading, setEditBillLoading] = useState(false);
 
   // PDF Upload & Preview State (under 1 MB)
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -549,6 +588,9 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
       packing: billData.packing !== undefined && billData.packing !== null ? String(billData.packing) : '0',
       tax: billData.tax !== undefined && billData.tax !== null ? String(billData.tax) : '0',
       total: billData.total || billData.amount || '0.00',
+      pdfData: billData.pdfData || '',
+      pdfUrl: billData.pdfUrl || '',
+      pdfName: billData.pdfName || '',
     };
 
     setSelectedBillForPrint(formattedBill);
@@ -560,41 +602,139 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
     }
   };
 
-  const handlePrint = async () => {
-    try {
-      const cust = filterCustomer || currentCustomerName;
-      // Fetch latest particular bills for the customer
-      const parts = await ParticularsApi.getAll(cust && cust !== 'ALL' ? cust : undefined);
-      if (parts && parts.length > 0) {
-        handleOpenBillPrint(parts[0], true);
-      } else if (accountDetails.length > 0) {
-        handleOpenBillPrint({
-          billNo: 'STATEMENT',
-          date: new Date().toLocaleDateString('en-GB').replace(/\//g, '-'),
-          customerName: cust || 'Customer',
-          companyName: accountDetails[0]?.companyName || 'General',
-          transport: '-',
-          caseCount: '0',
-          products: accountDetails.map((acc) => ({
-            particular: `${acc.companyName} (${acc.date})`,
-            quantity: '1',
-            rate: acc.debit || acc.credit || '0',
-            pktUnit: acc.credit > 0 ? 'CR' : 'DR',
-            amount: acc.debit || acc.credit || '0',
-          })),
-          amount: overallTotals.totalDebit.toFixed(2),
-          total: overallTotals.totalDebit.toFixed(2),
-        }, true);
-      } else {
-        alert('No bill records found to print.');
+  // Edit Particular Handlers
+  const handleOpenEditParticular = (row: any) => {
+    const rowId = row._id || row.id || '';
+    setEditingParticularId(rowId);
+    setEditBillForm({
+      billNo: row.billNo || '',
+      date: row.date || '',
+      customerName: row.customerName || '',
+      companyName: row.companyName || '',
+      transport: row.transport && row.transport !== '-' ? row.transport : '',
+      caseCount: String(row.caseCount || '0'),
+      discount: String(row.discount || '0'),
+      packing: String(row.packing || '0'),
+      tax: String(row.tax || '0'),
+      products: (row.products || []).map((p: any, idx: number) => ({
+        id: p._id || p.id || `edit-prod-${idx}`,
+        particular: p.particular || p.particularName || p.name || '',
+        quantity: String(p.quantity || '0'),
+        rate: String(p.rate || '0'),
+        pktUnit: p.pktUnit || p.pkt || '-',
+        amount: String(p.amount || '0'),
+      })),
+    });
+    setOpenEditParticularModal(true);
+  };
+
+  const handleAddEditProductRow = () => {
+    setEditBillForm((prev) => ({
+      ...prev,
+      products: [
+        ...prev.products,
+        {
+          id: `edit-prod-${Date.now()}`,
+          particular: '',
+          quantity: '1',
+          rate: '0',
+          pktUnit: '-',
+          amount: '0.00',
+        },
+      ],
+    }));
+  };
+
+  const handleUpdateEditProductRow = (index: number, field: string, val: string) => {
+    setEditBillForm((prev) => {
+      const updated = [...prev.products];
+      const row = { ...updated[index], [field]: val };
+      if (field === 'quantity' || field === 'rate') {
+        const q = parseFloat(field === 'quantity' ? val : row.quantity) || 0;
+        const r = parseFloat(field === 'rate' ? val : row.rate) || 0;
+        row.amount = (q * r).toFixed(2);
       }
+      updated[index] = row;
+      return { ...prev, products: updated };
+    });
+  };
+
+  const handleDeleteEditProductRow = (index: number) => {
+    setEditBillForm((prev) => ({
+      ...prev,
+      products: prev.products.filter((_, i) => i !== index),
+    }));
+  };
+
+  // Edit Calculation Hooks
+  const editSubtotal = useMemo(() => {
+    return editBillForm.products.reduce((acc, p) => acc + (parseFloat(p.amount) || 0), 0);
+  }, [editBillForm.products]);
+
+  const editDiscountVal = useMemo(() => {
+    const dStr = String(editBillForm.discount || '').trim();
+    const dNum = parseFloat(dStr.replace(/[^0-9.]/g, '')) || 0;
+    if (dNum <= 0) return 0;
+    return dStr.includes('%') || dNum <= 100 ? (editSubtotal * dNum) / 100 : dNum;
+  }, [editSubtotal, editBillForm.discount]);
+
+  const editPackingVal = useMemo(() => {
+    const pStr = String(editBillForm.packing || '').trim();
+    const pNum = parseFloat(pStr.replace(/[^0-9.]/g, '')) || 0;
+    if (pNum <= 0) return 0;
+    return pStr.includes('%') || pNum <= 100 ? (editSubtotal * pNum) / 100 : pNum;
+  }, [editSubtotal, editBillForm.packing]);
+
+  const editTaxVal = useMemo(() => {
+    const tStr = String(editBillForm.tax || '').trim();
+    const tNum = parseFloat(tStr.replace(/[^0-9.]/g, '')) || 0;
+    if (tNum <= 0) return 0;
+    const base = Math.max(0, editSubtotal - editDiscountVal + editPackingVal);
+    return tStr.includes('%') || tNum <= 100 ? (base * tNum) / 100 : tNum;
+  }, [editSubtotal, editDiscountVal, editPackingVal, editBillForm.tax]);
+
+  const editFinalTotal = useMemo(() => {
+    const net = Math.max(0, editSubtotal - editDiscountVal + editPackingVal + editTaxVal);
+    return net.toFixed(2);
+  }, [editSubtotal, editDiscountVal, editPackingVal, editTaxVal]);
+
+  const handleSaveEditParticular = async () => {
+    if (!editingParticularId) return;
+    try {
+      setEditBillLoading(true);
+      await ParticularsApi.update(editingParticularId, {
+        customerName: editBillForm.customerName,
+        companyName: editBillForm.companyName,
+        date: editBillForm.date,
+        transport: editBillForm.transport || '-',
+        caseCount: editBillForm.caseCount || '0',
+        discount: editBillForm.discount || '0',
+        packing: editBillForm.packing || '0',
+        tax: editBillForm.tax || '0',
+        billNo: editBillForm.billNo,
+        amount: editSubtotal.toFixed(2),
+        total: editFinalTotal,
+        products: editBillForm.products,
+      });
+
+      await fetchParticulars();
+      await fetchAccounts(filterCustomer);
+      setOpenEditParticularModal(false);
+      setPdfToast({
+        open: true,
+        message: `Bill #${editBillForm.billNo} updated successfully!`,
+        severity: 'success',
+      });
     } catch (err) {
-      console.error('Failed to print:', err);
+      console.error('Failed to update particular bill:', err);
+      alert('Error updating bill details');
+    } finally {
+      setEditBillLoading(false);
     }
   };
 
-  // PDF Upload Handlers (Under 1 MB Limit)
-  const MAX_PDF_SIZE_BYTES = 1 * 1024 * 1024; // 1 MB (1,048,576 bytes)
+  // Transport Receipt / PDF Upload Handlers (Up to 5 MB)
+  const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 
   const handleTriggerPdfUpload = (id: string) => {
     setUploadTargetBillId(id);
@@ -612,23 +752,26 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
     // Reset input so same file can be selected again if needed
     e.target.value = '';
 
-    // 1. Verify file type is PDF
-    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-    if (!isPdf) {
+    // 1. Verify file type is Image or PDF
+    const isImageOrPdf =
+      file.type.startsWith('image/') ||
+      file.type === 'application/pdf' ||
+      /\.(jpg|jpeg|png|webp|gif|pdf)$/i.test(file.name);
+    if (!isImageOrPdf) {
       setPdfToast({
         open: true,
-        message: 'Invalid file format. Please upload a valid PDF (.pdf) file only.',
+        message: 'Invalid file format. Please upload an Image (JPG, PNG, WEBP) or PDF file.',
         severity: 'error',
       });
       return;
     }
 
-    // 2. Verify file size is under 1 MB
-    if (file.size > MAX_PDF_SIZE_BYTES) {
+    // 2. Verify file size is under 5 MB
+    if (file.size > MAX_FILE_SIZE_BYTES) {
       const sizeInMb = (file.size / (1024 * 1024)).toFixed(2);
       setPdfToast({
         open: true,
-        message: `File size (${sizeInMb} MB) exceeds 1 MB limit. Please select a PDF under 1 MB.`,
+        message: `File size (${sizeInMb} MB) exceeds 5 MB limit. Please select a smaller file.`,
         severity: 'error',
       });
       return;
@@ -640,14 +783,15 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
       reader.onload = async () => {
         try {
           const base64Data = reader.result as string;
-          await ParticularsApi.uploadPdf(targetId, base64Data, file.name);
+          const uploadRes = await ParticularsApi.uploadPdf(targetId, base64Data, file.name);
+          const savedData = uploadRes?.data?.pdfData || base64Data;
 
           // Update local state in particularDetails
           setParticularDetails((prev) =>
             prev.map((p) => {
               const pId = p._id || p.id;
               if (pId === targetId) {
-                return { ...p, pdfData: base64Data, pdfName: file.name };
+                return { ...p, pdfData: savedData, pdfName: file.name };
               }
               return p;
             })
@@ -655,14 +799,14 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
 
           setPdfToast({
             open: true,
-            message: `PDF "${file.name}" uploaded successfully!`,
+            message: `Receipt document "${file.name}" uploaded successfully!`,
             severity: 'success',
           });
         } catch (uploadErr) {
-          console.error('Failed to save PDF to server:', uploadErr);
+          console.error('Failed to save document to server:', uploadErr);
           setPdfToast({
             open: true,
-            message: 'Failed to upload PDF. Please try again.',
+            message: 'Failed to upload receipt. Please try again.',
             severity: 'error',
           });
         } finally {
@@ -674,7 +818,7 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
         setUploadingBillId(null);
         setPdfToast({
           open: true,
-          message: 'Error reading PDF file.',
+          message: 'Error reading file.',
           severity: 'error',
         });
       };
@@ -1851,7 +1995,7 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
                 <Button
                   variant="contained"
                   disableElevation
-                  onClick={handlePrint}
+                  onClick={() => setOpenAccountDateModal(true)}
                   startIcon={<PrintOutlinedIcon sx={{ fontSize: '18px !important', color: '#0F172A' }} />}
                   sx={{
                     backgroundColor: '#FFFFFF',
@@ -2042,6 +2186,27 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
                   fontSize: '12px',
                 }}
               />
+              <Button
+                variant="contained"
+                disableElevation
+                onClick={() => setOpenParticularDateModal(true)}
+                startIcon={<PrintOutlinedIcon sx={{ fontSize: '18px !important', color: '#0F172A' }} />}
+                sx={{
+                  backgroundColor: '#FFFFFF',
+                  color: '#0F172A',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  textTransform: 'none',
+                  px: 2,
+                  py: 0.6,
+                  borderRadius: '6px',
+                  '&:hover': {
+                    backgroundColor: '#F8FAFC',
+                  },
+                }}
+              >
+                Print Bills List
+              </Button>
             </Box>
           </Box>
 
@@ -2079,7 +2244,7 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
                   <TableCell align="center" sx={{ py: 1.4, px: 1.5, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', letterSpacing: '0.04em', borderBottom: '1px solid #E2E8F0', borderRight: '1px solid #E2E8F0', width: '120px' }}>
                     TRANSPORT
                   </TableCell>
-                  <TableCell align="center" sx={{ py: 1.4, px: 1.5, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', letterSpacing: '0.04em', borderBottom: '1px solid #E2E8F0', width: '150px' }}>
+                  <TableCell align="center" sx={{ py: 1.4, px: 1.5, fontSize: '11.5px', fontWeight: 700, color: '#1E293B', letterSpacing: '0.04em', borderBottom: '1px solid #E2E8F0', width: '175px' }}>
                     ACTION
                   </TableCell>
                 </TableRow>
@@ -2183,6 +2348,25 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
                                 }}
                               >
                                 <PrintOutlinedIcon sx={{ fontSize: 14 }} />
+                              </IconButton>
+                            </Tooltip>
+
+                            {/* Edit Particular Bill Button */}
+                            <Tooltip title="Edit Bill Details" arrow>
+                              <IconButton
+                                size="small"
+                                onClick={() => handleOpenEditParticular(row)}
+                                sx={{
+                                  backgroundColor: '#0284C7',
+                                  color: '#FFFFFF',
+                                  borderRadius: '4px',
+                                  width: '24px',
+                                  height: '22px',
+                                  p: 0,
+                                  '&:hover': { backgroundColor: '#0369A1' },
+                                }}
+                              >
+                                <ModeEditOutlineRoundedIcon sx={{ fontSize: 14 }} />
                               </IconButton>
                             </Tooltip>
 
@@ -2618,18 +2802,34 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
           </IconButton>
         </DialogTitle>
 
-        <DialogContent sx={{ p: 0, flex: 1, backgroundColor: '#F1F5F9' }}>
+        <DialogContent sx={{ p: 0, flex: 1, backgroundColor: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {pdfPreviewModal?.url ? (
-            <iframe
-              src={pdfPreviewModal.url}
-              title="PDF Preview"
-              style={{
-                width: '100%',
-                height: '100%',
-                border: 'none',
-                display: 'block',
-              }}
-            />
+            pdfPreviewModal.url.startsWith('data:image') || pdfPreviewModal.url.match(/\.(jpeg|jpg|png|webp|gif)$/i) || !pdfPreviewModal.url.includes('application/pdf') ? (
+              <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', overflow: 'auto' }}>
+                <img
+                  src={pdfPreviewModal.url}
+                  alt={pdfPreviewModal.name || 'Document'}
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: '100%',
+                    objectFit: 'contain',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                    borderRadius: '6px',
+                  }}
+                />
+              </Box>
+            ) : (
+              <iframe
+                src={pdfPreviewModal.url}
+                title="PDF Preview"
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  border: 'none',
+                  display: 'block',
+                }}
+              />
+            )
           ) : (
             <Box
               sx={{
@@ -2640,7 +2840,7 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
                 color: '#64748B',
               }}
             >
-              <Typography>No PDF available</Typography>
+              <Typography>No document available</Typography>
             </Box>
           )}
         </DialogContent>
@@ -2667,10 +2867,25 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
               borderRadius: '6px',
             }}
           >
-            Delete PDF
+            Delete Document
           </Button>
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, flexWrap: 'wrap' }}>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<UploadFileRoundedIcon sx={{ fontSize: 16 }} />}
+              onClick={() => pdfPreviewModal?.id && handleTriggerPdfUpload(pdfPreviewModal.id)}
+              sx={{
+                textTransform: 'none',
+                fontWeight: 600,
+                fontSize: '12.5px',
+                borderRadius: '6px',
+              }}
+            >
+              Change / Re-upload
+            </Button>
+
             <Button
               variant="outlined"
               size="small"
@@ -2692,34 +2907,13 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
             </Button>
 
             <Button
-              variant="outlined"
-              size="small"
-              startIcon={<UploadFileRoundedIcon sx={{ fontSize: 16 }} />}
-              onClick={() => {
-                const billId = pdfPreviewModal?.id;
-                setPdfPreviewModal(null);
-                if (billId) handleTriggerPdfUpload(billId);
-              }}
-              sx={{
-                textTransform: 'none',
-                fontWeight: 600,
-                fontSize: '12.5px',
-                borderRadius: '6px',
-                color: '#0B4DB7',
-                borderColor: '#BFDBFE',
-              }}
-            >
-              Replace PDF
-            </Button>
-
-            <Button
               variant="contained"
               disableElevation
               size="small"
               startIcon={<DownloadRoundedIcon sx={{ fontSize: 16 }} />}
               component="a"
               href={pdfPreviewModal?.url}
-              download={pdfPreviewModal?.name || 'bill-document.pdf'}
+              download={pdfPreviewModal?.name || 'bill-receipt'}
               target="_blank"
               rel="noopener noreferrer"
               sx={{
@@ -2732,7 +2926,7 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
                 '&:hover': { backgroundColor: '#083B8D' },
               }}
             >
-              Download PDF
+              Download
             </Button>
           </Box>
         </DialogActions>
@@ -2761,6 +2955,399 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
           {pdfToast.message}
         </Alert>
       </Snackbar>
+
+      {/* Account Statement Date Range Print Modal */}
+      <DateRangePrintModal
+        open={openAccountDateModal}
+        onClose={() => setOpenAccountDateModal(false)}
+        title={`Print Account Statement - ${filterCustomer || currentCustomerName || 'All Customers'}`}
+        subtitle="Select transaction date range to filter ledger entries for A4 print."
+        items={accountDetails}
+        getDateFromItem={(a) => a.date || ''}
+        onConfirmPrint={(itemsToPrint, rangeText) => {
+          printLedgerStatementDirectly(
+            filterCustomer || currentCustomerName || 'All Customers',
+            itemsToPrint,
+            rangeText
+          );
+        }}
+      />
+
+      {/* Particulars Bills Date Range Print Modal */}
+      <DateRangePrintModal
+        open={openParticularDateModal}
+        onClose={() => setOpenParticularDateModal(false)}
+        title="Print Particulars Bills Master Report"
+        subtitle="Select bill date range to filter bills for A4 print."
+        items={particularDetails}
+        getDateFromItem={(p) => p.date || ''}
+        onConfirmPrint={(itemsToPrint, rangeText) => {
+          printParticularsListDirectly(itemsToPrint, rangeText);
+        }}
+      />
+
+      {/* Edit Particular Bill Dialog */}
+      <Dialog
+        open={openEditParticularModal}
+        onClose={() => setOpenEditParticularModal(false)}
+        maxWidth="md"
+        fullWidth
+        slotProps={{
+          paper: {
+            sx: {
+              borderRadius: '12px',
+              p: 1,
+            },
+          },
+        }}
+      >
+        <DialogTitle
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            pb: 1,
+            borderBottom: '1px solid #EEF2F6',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <ModeEditOutlineRoundedIcon sx={{ color: '#0B4DB7', fontSize: 24 }} />
+            <Typography sx={{ fontSize: '18px', fontWeight: 800, color: '#0F172A' }}>
+              Edit Bill #{editBillForm.billNo} {editBillForm.customerName ? `- ${editBillForm.customerName}` : ''}
+            </Typography>
+          </Box>
+          <IconButton size="small" onClick={() => setOpenEditParticularModal(false)} sx={{ color: '#64748B' }}>
+            <CloseRoundedIcon sx={{ fontSize: 20 }} />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent sx={{ pt: 2.5 }}>
+          {/* Bill Info Grid */}
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, gap: 2, mb: 2.5 }}>
+            <Box>
+              <Typography sx={{ fontSize: '12.5px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
+                Customer Name *
+              </Typography>
+              <Autocomplete
+                freeSolo
+                options={customerOptions.map((c) => c.name)}
+                value={editBillForm.customerName}
+                onInputChange={(_e, newVal) => setEditBillForm((prev) => ({ ...prev, customerName: newVal }))}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    size="small"
+                    placeholder="Customer Name"
+                  />
+                )}
+              />
+            </Box>
+
+            <Box>
+              <Typography sx={{ fontSize: '12.5px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
+                Company Name *
+              </Typography>
+              <Autocomplete
+                freeSolo
+                options={companyOptions.map((c) => c.name)}
+                value={editBillForm.companyName}
+                onInputChange={(_e, newVal) => setEditBillForm((prev) => ({ ...prev, companyName: newVal }))}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    size="small"
+                    placeholder="Company Name"
+                  />
+                )}
+              />
+            </Box>
+
+            <Box>
+              <Typography sx={{ fontSize: '12.5px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
+                Date (DD-MM-YYYY)
+              </Typography>
+              <TextField
+                fullWidth
+                size="small"
+                value={editBillForm.date}
+                onChange={(e) => setEditBillForm((prev) => ({ ...prev, date: e.target.value }))}
+                slotProps={{
+                  input: { sx: { fontSize: '13px', fontWeight: 600, borderRadius: '6px' } },
+                }}
+              />
+            </Box>
+
+            <Box>
+              <Typography sx={{ fontSize: '12.5px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
+                Transport Name
+              </Typography>
+              <TextField
+                fullWidth
+                size="small"
+                value={editBillForm.transport}
+                onChange={(e) => setEditBillForm((prev) => ({ ...prev, transport: e.target.value }))}
+                slotProps={{
+                  input: { sx: { fontSize: '13px', fontWeight: 500, borderRadius: '6px' } },
+                }}
+              />
+            </Box>
+
+            <Box>
+              <Typography sx={{ fontSize: '12.5px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
+                No. of Cases
+              </Typography>
+              <TextField
+                fullWidth
+                size="small"
+                value={editBillForm.caseCount}
+                onChange={(e) => setEditBillForm((prev) => ({ ...prev, caseCount: e.target.value }))}
+                slotProps={{
+                  input: { sx: { fontSize: '13px', fontWeight: 500, borderRadius: '6px' } },
+                }}
+              />
+            </Box>
+
+            <Box>
+              <Typography sx={{ fontSize: '12.5px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
+                Discount (% or ₹)
+              </Typography>
+              <TextField
+                fullWidth
+                size="small"
+                value={editBillForm.discount}
+                onChange={(e) => setEditBillForm((prev) => ({ ...prev, discount: e.target.value }))}
+                slotProps={{
+                  input: { sx: { fontSize: '13px', fontWeight: 500, borderRadius: '6px' } },
+                }}
+              />
+            </Box>
+
+            <Box>
+              <Typography sx={{ fontSize: '12.5px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
+                Packing (% or ₹)
+              </Typography>
+              <TextField
+                fullWidth
+                size="small"
+                value={editBillForm.packing}
+                onChange={(e) => setEditBillForm((prev) => ({ ...prev, packing: e.target.value }))}
+                slotProps={{
+                  input: { sx: { fontSize: '13px', fontWeight: 500, borderRadius: '6px' } },
+                }}
+              />
+            </Box>
+
+            <Box>
+              <Typography sx={{ fontSize: '12.5px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
+                Tax (% or ₹)
+              </Typography>
+              <TextField
+                fullWidth
+                size="small"
+                value={editBillForm.tax}
+                onChange={(e) => setEditBillForm((prev) => ({ ...prev, tax: e.target.value }))}
+                slotProps={{
+                  input: { sx: { fontSize: '13px', fontWeight: 500, borderRadius: '6px' } },
+                }}
+              />
+            </Box>
+          </Box>
+
+          {/* Product Items Header */}
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5, mt: 1 }}>
+            <Typography sx={{ fontSize: '14.5px', fontWeight: 800, color: '#0F172A' }}>
+              Product Items ({editBillForm.products.length})
+            </Typography>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={handleAddEditProductRow}
+              startIcon={<AddRoundedIcon sx={{ fontSize: 16 }} />}
+              sx={{
+                fontSize: '12px',
+                fontWeight: 700,
+                textTransform: 'none',
+                borderRadius: '6px',
+              }}
+            >
+              Add Item
+            </Button>
+          </Box>
+
+          {/* Product Items Table */}
+          <TableContainer sx={{ border: '1px solid #E2E8F0', borderRadius: '8px', mb: 2 }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow sx={{ backgroundColor: '#F8FAFC' }}>
+                  <TableCell sx={{ fontSize: '11px', fontWeight: 700, width: '40px' }}>#</TableCell>
+                  <TableCell sx={{ fontSize: '11px', fontWeight: 700 }}>Particular / Item</TableCell>
+                  <TableCell sx={{ fontSize: '11px', fontWeight: 700, width: '90px' }}>Qty</TableCell>
+                  <TableCell sx={{ fontSize: '11px', fontWeight: 700, width: '90px' }}>Rate (₹)</TableCell>
+                  <TableCell sx={{ fontSize: '11px', fontWeight: 700, width: '90px' }}>Unit</TableCell>
+                  <TableCell align="right" sx={{ fontSize: '11px', fontWeight: 700, width: '110px' }}>Amount (₹)</TableCell>
+                  <TableCell align="center" sx={{ fontSize: '11px', fontWeight: 700, width: '50px' }}>Del</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {editBillForm.products.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} align="center" sx={{ py: 3, color: '#64748B', fontSize: '12.5px' }}>
+                      No items. Click "+ Add Item" above to add products.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  editBillForm.products.map((prod, idx) => (
+                    <TableRow key={prod.id || idx}>
+                      <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>{idx + 1}</TableCell>
+                      <TableCell>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          placeholder="Item Name"
+                          value={prod.particular}
+                          onChange={(e) => handleUpdateEditProductRow(idx, 'particular', e.target.value)}
+                          slotProps={{
+                            input: { sx: { fontSize: '12.5px', fontWeight: 600, height: '32px' } },
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          placeholder="Qty"
+                          value={prod.quantity}
+                          onChange={(e) => handleUpdateEditProductRow(idx, 'quantity', e.target.value)}
+                          slotProps={{
+                            input: { sx: { fontSize: '12.5px', height: '32px' } },
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          placeholder="Rate"
+                          value={prod.rate}
+                          onChange={(e) => handleUpdateEditProductRow(idx, 'rate', e.target.value)}
+                          slotProps={{
+                            input: { sx: { fontSize: '12.5px', height: '32px' } },
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          placeholder="Pkt/Bag"
+                          value={prod.pktUnit}
+                          onChange={(e) => handleUpdateEditProductRow(idx, 'pktUnit', e.target.value)}
+                          slotProps={{
+                            input: { sx: { fontSize: '12.5px', height: '32px' } },
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontSize: '12.5px', fontWeight: 700, color: '#0F172A' }}>
+                        ₹{parseFloat(prod.amount || '0').toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell align="center">
+                        <IconButton
+                          size="small"
+                          onClick={() => handleDeleteEditProductRow(idx)}
+                          sx={{ color: '#DC2626', p: 0.4 }}
+                        >
+                          <DeleteOutlineRoundedIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+
+          {/* Live Summary Calculation Banner */}
+          <Box
+            sx={{
+              p: 2,
+              borderRadius: '8px',
+              backgroundColor: '#F8FAFC',
+              border: '1px solid #E2E8F0',
+              display: 'flex',
+              flexWrap: 'wrap',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 2,
+            }}
+          >
+            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', fontSize: '12.5px' }}>
+              <div>
+                <span style={{ color: '#64748B' }}>Subtotal: </span>
+                <strong style={{ color: '#0F172A' }}>₹ {editSubtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+              </div>
+              {editDiscountVal > 0 && (
+                <div>
+                  <span style={{ color: '#DC2626' }}>Discount: </span>
+                  <strong style={{ color: '#DC2626' }}>- ₹ {editDiscountVal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                </div>
+              )}
+              {editPackingVal > 0 && (
+                <div>
+                  <span style={{ color: '#64748B' }}>Packing: </span>
+                  <strong>+ ₹ {editPackingVal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                </div>
+              )}
+              {editTaxVal > 0 && (
+                <div>
+                  <span style={{ color: '#64748B' }}>Tax: </span>
+                  <strong>+ ₹ {editTaxVal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                </div>
+              )}
+            </Box>
+
+            <Box sx={{ textAlign: 'right' }}>
+              <Typography sx={{ fontSize: '11px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>
+                Updated Net Total
+              </Typography>
+              <Typography sx={{ fontSize: '18px', fontWeight: 900, color: '#0B4DB7' }}>
+                ₹ {parseFloat(editFinalTotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </Typography>
+            </Box>
+          </Box>
+        </DialogContent>
+
+        <DialogActions sx={{ px: 3, pb: 2, pt: 1 }}>
+          <Button onClick={() => setOpenEditParticularModal(false)} sx={{ color: '#64748B', fontWeight: 600, textTransform: 'none' }}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            disableElevation
+            onClick={handleSaveEditParticular}
+            disabled={editBillLoading}
+            sx={{
+              backgroundColor: '#0B4DB7',
+              color: '#FFFFFF',
+              fontWeight: 700,
+              textTransform: 'none',
+              px: 3,
+              borderRadius: '6px',
+              '&:hover': { backgroundColor: '#083B8D' },
+            }}
+          >
+            {editBillLoading ? 'Saving...' : 'Save Bill Changes'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Hidden File Input for Transport / Godown Receipt Upload */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept="image/*,application/pdf"
+        style={{ display: 'none' }}
+        onChange={handlePdfFileChange}
+      />
     </Box>
   );
 };

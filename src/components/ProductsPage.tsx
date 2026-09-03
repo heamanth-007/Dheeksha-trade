@@ -25,7 +25,9 @@ import ClearRoundedIcon from '@mui/icons-material/ClearRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import ModeEditOutlineRoundedIcon from '@mui/icons-material/ModeEditOutlineRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import PrintOutlinedIcon from '@mui/icons-material/PrintOutlined';
 import { ProductsApi } from '../services/api';
+import { printProductsListDirectly } from '../utils/printUtils';
 
 export interface ProductItem {
   _id?: string;
@@ -243,6 +245,30 @@ export const ProductsPage: FC = () => {
               )}
             </Box>
 
+            {/* Print Products List Button */}
+            <Button
+              variant="contained"
+              disableElevation
+              onClick={() => printProductsListDirectly(filteredProducts)}
+              startIcon={<PrintOutlinedIcon sx={{ fontSize: 18 }} />}
+              sx={{
+                backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                color: '#FFFFFF',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
+                fontSize: '13px',
+                fontWeight: 700,
+                textTransform: 'none',
+                px: 1.8,
+                height: '36px',
+                borderRadius: '6px',
+                '&:hover': {
+                  backgroundColor: 'rgba(255, 255, 255, 0.25)',
+                },
+              }}
+            >
+              Print List ({filteredProducts.length})
+            </Button>
+
             {/* Add Product Button */}
             <Button
               variant="contained"
@@ -258,6 +284,7 @@ export const ProductsPage: FC = () => {
                 px: 2,
                 height: '36px',
                 borderRadius: '6px',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
                 minWidth: 'auto',
                 whiteSpace: 'nowrap',
                 '&:hover': {

@@ -124,6 +124,101 @@ export const createParticular = async (req: Request, res: Response, next: NextFu
   }
 };
 
+export const updateParticular = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const existing = await Particular.findById(id);
+    if (!existing) {
+      res.status(404).json({ success: false, error: 'Particular bill not found' });
+      return;
+    }
+
+    const oldCustomerName = existing.customerName;
+
+    const {
+      customerName,
+      caseCount,
+      companyName,
+      discount,
+      transport,
+      packing,
+      billNo,
+      tax,
+      amount,
+      total,
+      date,
+      products,
+    } = req.body;
+
+    const updatedParticular = await Particular.findByIdAndUpdate(
+      id,
+      {
+        ...(customerName !== undefined && { customerName }),
+        ...(caseCount !== undefined && { caseCount }),
+        ...(companyName !== undefined && { companyName }),
+        ...(discount !== undefined && { discount }),
+        ...(transport !== undefined && { transport }),
+        ...(packing !== undefined && { packing }),
+        ...(billNo !== undefined && { billNo: String(billNo).trim() }),
+        ...(tax !== undefined && { tax }),
+        ...(amount !== undefined && { amount }),
+        ...(total !== undefined && { total }),
+        ...(date !== undefined && { date }),
+        ...(products !== undefined && { products }),
+      },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedParticular) {
+      res.status(404).json({ success: false, error: 'Failed to update particular bill' });
+      return;
+    }
+
+    // Update AccountLedger entry
+    const billTotalNum = parseFloat(String(updatedParticular.total || updatedParticular.amount || '0').replace(/,/g, '')) || 0;
+    
+    // Find or update AccountLedger
+    const ledgerEntry = await AccountLedger.findOne({
+      $or: [
+        { particularId: String(id) },
+        { particularId: String(existing._id) },
+        ...(existing.billNo ? [{ billNo: String(existing.billNo).trim() }] : []),
+      ],
+    });
+
+    if (ledgerEntry) {
+      ledgerEntry.customerName = updatedParticular.customerName;
+      ledgerEntry.companyName = updatedParticular.companyName;
+      ledgerEntry.date = updatedParticular.date;
+      ledgerEntry.billNo = updatedParticular.billNo;
+      ledgerEntry.debit = billTotalNum.toFixed(2);
+      await ledgerEntry.save();
+    } else if (billTotalNum > 0) {
+      await AccountLedger.create({
+        particularId: String(updatedParticular._id),
+        billNo: updatedParticular.billNo,
+        customerName: updatedParticular.customerName,
+        date: updatedParticular.date,
+        companyName: updatedParticular.companyName,
+        debit: billTotalNum.toFixed(2),
+        credit: '0.00',
+        balance: '0.00',
+        type: 'BILL',
+      });
+    }
+
+    // Recalculate balances
+    if (oldCustomerName && oldCustomerName !== updatedParticular.customerName) {
+      await recalculateCustomerBalance(oldCustomerName);
+    }
+    await recalculateCustomerBalance(updatedParticular.customerName);
+
+    res.status(200).json({ success: true, data: updatedParticular });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const deleteParticular = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const particular = await Particular.findById(req.params.id);
@@ -176,7 +271,7 @@ export const uploadParticularPdf = async (req: Request, res: Response, next: Nex
     const { pdfData, pdfName } = req.body;
 
     if (!pdfData) {
-      res.status(400).json({ success: false, error: 'PDF data is required' });
+      res.status(400).json({ success: false, error: 'Document data is required' });
       return;
     }
 
@@ -186,52 +281,47 @@ export const uploadParticularPdf = async (req: Request, res: Response, next: Nex
       return;
     }
 
-    if (!isCloudinaryConfigured()) {
-      console.error('[Cloudinary Error] Missing Cloudinary credentials in server/.env');
-      res.status(400).json({
-        success: false,
-        error:
-          'Cloudinary is not configured. Please fill in CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET in server/.env',
-      });
-      return;
+    let savedUrl = pdfData;
+    let publicId = '';
+
+    if (isCloudinaryConfigured()) {
+      try {
+        if (existingParticular.pdfPublicId) {
+          await deleteFromCloudinary(existingParticular.pdfPublicId);
+        }
+
+        const cloudRes = await uploadToCloudinary(
+          pdfData,
+          'dheeksha_trade/bills',
+          pdfName || `Bill-${existingParticular.billNo || 'receipt'}`
+        );
+
+        savedUrl = cloudRes.secure_url;
+        publicId = cloudRes.public_id;
+        console.log(`[Cloudinary Success] Uploaded: ${savedUrl}`);
+      } catch (cloudErr) {
+        console.warn('[Cloudinary Warning] Falling back to direct database storage:', cloudErr);
+        savedUrl = pdfData;
+      }
+    } else {
+      console.log('[Storage] Storing document directly in database (Cloudinary not configured)');
     }
 
-    // Delete previous Cloudinary file if it exists
-    if (existingParticular.pdfPublicId) {
-      await deleteFromCloudinary(existingParticular.pdfPublicId);
-    }
-
-    // Upload to Cloudinary CDN
-    const cloudRes = await uploadToCloudinary(
-      pdfData,
-      'dheeksha_trade/bills',
-      pdfName || `Bill-${existingParticular.billNo || 'document'}`
-    );
-
-    // Save Cloudinary secure URL and public_id into MongoDB document
-    existingParticular.pdfData = cloudRes.secure_url;
-    existingParticular.pdfName = pdfName || 'bill-document.pdf';
-    existingParticular.pdfPublicId = cloudRes.public_id;
+    existingParticular.pdfData = savedUrl;
+    existingParticular.pdfName = pdfName || 'transport-receipt';
+    existingParticular.pdfPublicId = publicId;
     await existingParticular.save();
-
-    console.log(`=============================================`);
-    console.log(`[Cloudinary Upload Success]`);
-    console.log(` Bill No:   ${existingParticular.billNo}`);
-    console.log(` File Name: ${existingParticular.pdfName}`);
-    console.log(` Public ID: ${cloudRes.public_id}`);
-    console.log(` CDN URL:   ${cloudRes.secure_url}`);
-    console.log(`=============================================`);
 
     res.status(200).json({
       success: true,
-      message: 'PDF uploaded to Cloudinary successfully',
+      message: 'Transport receipt uploaded successfully',
       data: existingParticular,
     });
   } catch (error: any) {
-    console.error('[Cloudinary Upload Error]:', error);
+    console.error('[Upload Error]:', error);
     res.status(500).json({
       success: false,
-      error: error?.message || 'Failed to upload PDF to Cloudinary',
+      error: error?.message || 'Failed to upload document',
     });
   }
 };

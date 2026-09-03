@@ -1,4 +1,4 @@
-import { useState, useEffect, type FC } from 'react';
+import { useState, useEffect, useMemo, type FC } from 'react';
 import {
   Box,
   Typography,
@@ -19,12 +19,19 @@ import {
   DialogContent,
   DialogActions,
   TextField,
+  Chip,
+  Autocomplete,
 } from '@mui/material';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import ModeEditOutlineRoundedIcon from '@mui/icons-material/ModeEditOutlineRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
-import { CustomersApi } from '../services/api';
+import AccountBalanceWalletRoundedIcon from '@mui/icons-material/AccountBalanceWalletRounded';
+import PaymentsRoundedIcon from '@mui/icons-material/PaymentsRounded';
+import PrintOutlinedIcon from '@mui/icons-material/PrintOutlined';
+import { CustomersApi, AccountsApi, CompaniesApi } from '../services/api';
+import { printCustomerListDirectly } from '../utils/printUtils';
+import { DateRangePrintModal } from './DateRangePrintModal';
 
 export interface Customer {
   _id?: string;
@@ -37,11 +44,16 @@ export interface Customer {
   address: string;
   mobile: string;
   gst: string;
+  totalDebit?: number;
+  totalCredit?: number;
+  pendingDue?: number;
+  netBalance?: number;
+  status?: 'PENDING' | 'SETTLED' | 'ADVANCE';
 }
 
 interface CustomersPageProps {
   onAddNew?: () => void;
-  onSelectCustomerForParticular?: (customerName: string) => void;
+  onSelectCustomerForParticular?: (customerName: string, subTab?: 'Account Details' | 'Create Particular') => void;
 }
 
 export const CustomersPage: FC<CustomersPageProps> = ({ onAddNew, onSelectCustomerForParticular }) => {
@@ -60,6 +72,18 @@ export const CustomersPage: FC<CustomersPageProps> = ({ onAddNew, onSelectCustom
   });
   const [editLoading, setEditLoading] = useState(false);
 
+  // Quick Payment / Add Credit Modal State
+  const [openPaymentModal, setOpenPaymentModal] = useState(false);
+  const [openDatePrintModal, setOpenDatePrintModal] = useState(false);
+  const [paymentCustomer, setPaymentCustomer] = useState<Customer | null>(null);
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [paymentForm, setPaymentForm] = useState({
+    companyName: '',
+    creditAmount: '',
+    date: new Date().toLocaleDateString('en-GB').replace(/\//g, '-'),
+  });
+  const [paymentLoading, setPaymentLoading] = useState(false);
+
   const fetchCustomers = async () => {
     try {
       setLoading(true);
@@ -72,8 +96,21 @@ export const CustomersPage: FC<CustomersPageProps> = ({ onAddNew, onSelectCustom
     }
   };
 
+  const fetchCompanies = async () => {
+    try {
+      const data = await CompaniesApi.getAll();
+      setCompanies(data || []);
+      if (data && data.length > 0 && !paymentForm.companyName) {
+        setPaymentForm((prev) => ({ ...prev, companyName: data[0].name }));
+      }
+    } catch (err) {
+      console.error('Failed to fetch companies:', err);
+    }
+  };
+
   useEffect(() => {
     fetchCustomers();
+    fetchCompanies();
   }, []);
 
   const handleOpenEdit = (customer: Customer) => {
@@ -136,13 +173,53 @@ export const CustomersPage: FC<CustomersPageProps> = ({ onAddNew, onSelectCustom
     }
   };
 
-  const filteredCustomers = customers.filter(
-    (c) =>
-      c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.gst.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.mobile.includes(searchTerm)
-  );
+  const handleOpenPayment = (customer: Customer) => {
+    setPaymentCustomer(customer);
+    const due = customer.pendingDue || 0;
+    setPaymentForm({
+      companyName: companies.length > 0 ? companies[0].name : 'General',
+      creditAmount: due > 0 ? String(due) : '',
+      date: new Date().toLocaleDateString('en-GB').replace(/\//g, '-'),
+    });
+    setOpenPaymentModal(true);
+  };
+
+  const handleSavePayment = async () => {
+    if (!paymentCustomer) return;
+    const amountNum = parseFloat(paymentForm.creditAmount.replace(/,/g, ''));
+    if (isNaN(amountNum) || amountNum <= 0) {
+      alert('Please enter a valid amount');
+      return;
+    }
+
+    try {
+      setPaymentLoading(true);
+      await AccountsApi.addCredit({
+        customerName: paymentCustomer.name,
+        companyName: paymentForm.companyName || 'General',
+        creditAmount: amountNum.toFixed(2),
+        date: paymentForm.date || new Date().toLocaleDateString('en-GB').replace(/\//g, '-'),
+      });
+      setOpenPaymentModal(false);
+      await fetchCustomers();
+    } catch (err) {
+      console.error('Failed to record payment:', err);
+      alert('Error recording payment');
+    } finally {
+      setPaymentLoading(false);
+    }
+  };
+
+  const filteredCustomers = useMemo(() => {
+    return customers.filter(
+      (c) =>
+        c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        c.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        c.gst.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        c.mobile.includes(searchTerm) ||
+        (c.idCode && c.idCode.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+  }, [customers, searchTerm]);
 
   return (
     <Box
@@ -161,21 +238,26 @@ export const CustomersPage: FC<CustomersPageProps> = ({ onAddNew, onSelectCustom
           justifyContent: 'space-between',
           alignItems: { xs: 'flex-start', sm: 'center' },
           gap: 2,
-          mb: 3.2,
+          mb: 3,
         }}
       >
-        <Typography
-          variant="h1"
-          sx={{
-            fontSize: '30px',
-            fontWeight: 800,
-            color: '#0F172A',
-            letterSpacing: '-0.025em',
-            lineHeight: 1.2,
-          }}
-        >
-          Customers
-        </Typography>
+        <Box>
+          <Typography
+            variant="h1"
+            sx={{
+              fontSize: '28px',
+              fontWeight: 800,
+              color: '#0F172A',
+              letterSpacing: '-0.025em',
+              lineHeight: 1.2,
+            }}
+          >
+            Customers
+          </Typography>
+          <Typography sx={{ fontSize: '13px', color: '#64748B', mt: 0.3, fontWeight: 500 }}>
+            Customer directory with live Debit (Purchases), Credit (Paid/Advance), and Balance
+          </Typography>
+        </Box>
 
         <Box
           sx={{
@@ -190,15 +272,19 @@ export const CustomersPage: FC<CustomersPageProps> = ({ onAddNew, onSelectCustom
             sx={{
               display: 'flex',
               alignItems: 'center',
-              backgroundColor: '#F1F3F9',
+              backgroundColor: '#FFFFFF',
               borderRadius: '8px',
+              border: '1px solid #E2E8F0',
               px: 1.5,
               height: '38px',
-              width: { xs: '100%', sm: '230px' },
+              width: { xs: '100%', sm: '250px' },
               boxSizing: 'border-box',
-              transition: 'background-color 0.2s',
+              transition: 'border-color 0.2s',
               '&:hover': {
-                backgroundColor: '#ECEFF6',
+                borderColor: '#CBD5E1',
+              },
+              '&:focus-within': {
+                borderColor: '#0B4DB7',
               },
             }}
           >
@@ -229,31 +315,60 @@ export const CustomersPage: FC<CustomersPageProps> = ({ onAddNew, onSelectCustom
             />
           </Box>
 
-          {/* Add New Customer Button */}
+          {/* Print Customers List Button with Date Range Filter */}
           <Button
-            variant="contained"
-            disableElevation
-            onClick={onAddNew}
-            startIcon={<AddRoundedIcon sx={{ fontSize: 19 }} />}
+            variant="outlined"
+            onClick={() => setOpenDatePrintModal(true)}
+            startIcon={<PrintOutlinedIcon sx={{ fontSize: 18 }} />}
             sx={{
-              backgroundColor: '#0B4DB7',
-              color: '#FFFFFF',
+              backgroundColor: '#FFFFFF',
+              color: '#0F172A',
+              borderColor: '#CBD5E1',
               height: '38px',
-              px: 2,
+              px: 1.8,
               borderRadius: '8px',
-              fontSize: '13.5px',
+              fontSize: '13px',
               fontWeight: 700,
               textTransform: 'none',
               letterSpacing: '-0.01em',
               whiteSpace: 'nowrap',
-              boxShadow: '0 1px 2px rgba(11, 77, 183, 0.15)',
+              boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
               '&:hover': {
-                backgroundColor: '#083B8D',
+                backgroundColor: '#F8FAFC',
+                borderColor: '#94A3B8',
               },
             }}
           >
-            Add New Customer
+            Print List ({filteredCustomers.length})
           </Button>
+
+          {/* Add New Customer Button */}
+          {onAddNew && (
+            <Button
+              variant="contained"
+              disableElevation
+              onClick={onAddNew}
+              startIcon={<AddRoundedIcon sx={{ fontSize: 19 }} />}
+              sx={{
+                backgroundColor: '#0B4DB7',
+                color: '#FFFFFF',
+                height: '38px',
+                px: 2,
+                borderRadius: '8px',
+                fontSize: '13.5px',
+                fontWeight: 700,
+                textTransform: 'none',
+                letterSpacing: '-0.01em',
+                whiteSpace: 'nowrap',
+                boxShadow: '0 1px 2px rgba(11, 77, 183, 0.15)',
+                '&:hover': {
+                  backgroundColor: '#083B8D',
+                },
+              }}
+            >
+              Add New Customer
+            </Button>
+          )}
         </Box>
       </Box>
 
@@ -270,19 +385,19 @@ export const CustomersPage: FC<CustomersPageProps> = ({ onAddNew, onSelectCustom
         }}
       >
         <TableContainer>
-          <Table sx={{ width: '100%' }} aria-label="customers table">
+          <Table sx={{ minWidth: 900 }} aria-label="customers table">
             <TableHead>
               <TableRow sx={{ backgroundColor: '#F8FAFC' }}>
                 <TableCell
                   sx={{
                     py: 1.6,
-                    px: 3,
+                    px: 2.5,
                     fontSize: '11.5px',
                     fontWeight: 700,
                     color: '#475569',
                     letterSpacing: '0.04em',
                     borderBottom: '1px solid #EEF2F6',
-                    width: '100px',
+                    width: '80px',
                   }}
                 >
                   ID
@@ -290,7 +405,7 @@ export const CustomersPage: FC<CustomersPageProps> = ({ onAddNew, onSelectCustom
                 <TableCell
                   sx={{
                     py: 1.6,
-                    px: 3,
+                    px: 2.5,
                     fontSize: '11.5px',
                     fontWeight: 700,
                     color: '#475569',
@@ -303,7 +418,7 @@ export const CustomersPage: FC<CustomersPageProps> = ({ onAddNew, onSelectCustom
                 <TableCell
                   sx={{
                     py: 1.6,
-                    px: 3,
+                    px: 2.5,
                     fontSize: '11.5px',
                     fontWeight: 700,
                     color: '#475569',
@@ -311,45 +426,64 @@ export const CustomersPage: FC<CustomersPageProps> = ({ onAddNew, onSelectCustom
                     borderBottom: '1px solid #EEF2F6',
                   }}
                 >
-                  ADDRESS
-                </TableCell>
-                <TableCell
-                  sx={{
-                    py: 1.6,
-                    px: 3,
-                    fontSize: '11.5px',
-                    fontWeight: 700,
-                    color: '#475569',
-                    letterSpacing: '0.04em',
-                    borderBottom: '1px solid #EEF2F6',
-                  }}
-                >
-                  MOBILE NUMBER
-                </TableCell>
-                <TableCell
-                  sx={{
-                    py: 1.6,
-                    px: 3,
-                    fontSize: '11.5px',
-                    fontWeight: 700,
-                    color: '#475569',
-                    letterSpacing: '0.04em',
-                    borderBottom: '1px solid #EEF2F6',
-                  }}
-                >
-                  GSTIN
+                  ADDRESS & CONTACT
                 </TableCell>
                 <TableCell
                   align="right"
                   sx={{
                     py: 1.6,
-                    px: 3,
+                    px: 2.5,
+                    fontSize: '11.5px',
+                    fontWeight: 700,
+                    color: '#1E293B',
+                    letterSpacing: '0.04em',
+                    borderBottom: '1px solid #EEF2F6',
+                    width: '130px',
+                  }}
+                >
+                  DEBIT (DR)
+                </TableCell>
+                <TableCell
+                  align="right"
+                  sx={{
+                    py: 1.6,
+                    px: 2.5,
+                    fontSize: '11.5px',
+                    fontWeight: 700,
+                    color: '#16A34A',
+                    letterSpacing: '0.04em',
+                    borderBottom: '1px solid #EEF2F6',
+                    width: '130px',
+                  }}
+                >
+                  CREDIT (CR)
+                </TableCell>
+                <TableCell
+                  align="right"
+                  sx={{
+                    py: 1.6,
+                    px: 2.5,
                     fontSize: '11.5px',
                     fontWeight: 700,
                     color: '#475569',
                     letterSpacing: '0.04em',
                     borderBottom: '1px solid #EEF2F6',
-                    width: '120px',
+                    width: '140px',
+                  }}
+                >
+                  NET BALANCE
+                </TableCell>
+                <TableCell
+                  align="center"
+                  sx={{
+                    py: 1.6,
+                    px: 2.5,
+                    fontSize: '11.5px',
+                    fontWeight: 700,
+                    color: '#475569',
+                    letterSpacing: '0.04em',
+                    borderBottom: '1px solid #EEF2F6',
+                    width: '190px',
                   }}
                 >
                   ACTIONS
@@ -360,14 +494,14 @@ export const CustomersPage: FC<CustomersPageProps> = ({ onAddNew, onSelectCustom
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 6 }}>
+                  <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
                     <CircularProgress size={32} sx={{ color: '#0B4DB7' }} />
                   </TableCell>
                 </TableRow>
               ) : filteredCustomers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 6, color: '#64748B' }}>
-                    No customers found. Click "Add New Customer" to create one.
+                  <TableCell colSpan={7} align="center" sx={{ py: 6, color: '#64748B' }}>
+                    No customers found.
                   </TableCell>
                 </TableRow>
               ) : (
@@ -376,6 +510,11 @@ export const CustomersPage: FC<CustomersPageProps> = ({ onAddNew, onSelectCustom
                   const recordId = customer._id || customer.id || '';
                   const idDisplay = customer.idCode || `#${(index + 1).toString().padStart(4, '0')}`;
                   const avatarInitial = customer.avatarLetter || customer.name.charAt(0).toUpperCase();
+
+                  const totalDebitNum = customer.totalDebit || 0;
+                  const totalCreditNum = customer.totalCredit || 0;
+                  const pendingDueNum = customer.pendingDue || 0;
+                  const netBalanceNum = customer.netBalance || 0;
 
                   return (
                     <TableRow
@@ -391,11 +530,11 @@ export const CustomersPage: FC<CustomersPageProps> = ({ onAddNew, onSelectCustom
                       <TableCell
                         sx={{
                           py: 1.6,
-                          px: 3,
-                          fontSize: '13.5px',
-                          color: '#475569',
+                          px: 2.5,
+                          fontSize: '13px',
+                          color: '#64748B',
                           fontWeight: 600,
-                          borderBottom: isLast ? 'none' : '1px solid #F8FAFC',
+                          borderBottom: isLast ? 'none' : '1px solid #F1F5F9',
                         }}
                       >
                         {idDisplay}
@@ -405,104 +544,232 @@ export const CustomersPage: FC<CustomersPageProps> = ({ onAddNew, onSelectCustom
                       <TableCell
                         sx={{
                           py: 1.6,
-                          px: 3,
-                          borderBottom: isLast ? 'none' : '1px solid #F8FAFC',
+                          px: 2.5,
+                          borderBottom: isLast ? 'none' : '1px solid #F1F5F9',
                         }}
                       >
                         <Box
-                          onClick={() => onSelectCustomerForParticular?.(customer.name)}
+                          onClick={() => onSelectCustomerForParticular?.(customer.name, 'Account Details')}
                           sx={{
                             display: 'flex',
                             alignItems: 'center',
                             gap: 1.5,
-                            cursor: onSelectCustomerForParticular ? 'pointer' : 'default',
+                            cursor: 'pointer',
                           }}
                         >
                           <Box
                             sx={{
-                              width: 32,
-                              height: 32,
+                              width: 34,
+                              height: 34,
                               borderRadius: '50%',
                               backgroundColor: customer.avatarBg || '#DBEAFE',
                               color: customer.avatarColor || '#0B4DB7',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
-                              fontSize: '13px',
+                              fontSize: '13.5px',
                               fontWeight: 700,
                               flexShrink: 0,
                             }}
                           >
                             {avatarInitial}
                           </Box>
-                          <Typography
-                            sx={{
-                              fontSize: '14px',
-                              fontWeight: 700,
-                              color: '#0F172A',
-                              letterSpacing: '-0.01em',
-                              '&:hover': onSelectCustomerForParticular
-                                ? { color: '#0B4DB7', textDecoration: 'underline' }
-                                : {},
-                            }}
-                          >
-                            {customer.name}
-                          </Typography>
+                          <Box>
+                            <Typography
+                              sx={{
+                                fontSize: '14px',
+                                fontWeight: 700,
+                                color: '#0F172A',
+                                letterSpacing: '-0.01em',
+                                '&:hover': {
+                                  color: '#0B4DB7',
+                                  textDecoration: 'underline',
+                                },
+                              }}
+                            >
+                              {customer.name}
+                            </Typography>
+                            {customer.gst && customer.gst !== 'N/A' && (
+                              <Typography sx={{ fontSize: '11px', color: '#64748B', fontWeight: 600 }}>
+                                GST: {customer.gst}
+                              </Typography>
+                            )}
+                          </Box>
                         </Box>
                       </TableCell>
 
-                      {/* Address */}
+                      {/* Address & Mobile */}
                       <TableCell
                         sx={{
                           py: 1.6,
-                          px: 3,
-                          fontSize: '13.5px',
+                          px: 2.5,
+                          fontSize: '13px',
                           color: '#334155',
                           fontWeight: 500,
-                          borderBottom: isLast ? 'none' : '1px solid #F8FAFC',
+                          borderBottom: isLast ? 'none' : '1px solid #F1F5F9',
                         }}
                       >
-                        {customer.address}
+                        <Typography sx={{ fontSize: '13px', color: '#334155', fontWeight: 500, maxWidth: '220px' }}>
+                          {customer.address}
+                        </Typography>
+                        <Typography sx={{ fontSize: '11.5px', color: '#64748B', fontWeight: 600 }}>
+                          📞 {customer.mobile || 'N/A'}
+                        </Typography>
                       </TableCell>
 
-                      {/* Mobile */}
-                      <TableCell
-                        sx={{
-                          py: 1.6,
-                          px: 3,
-                          fontSize: '13.5px',
-                          color: '#334155',
-                          fontWeight: 500,
-                          borderBottom: isLast ? 'none' : '1px solid #F8FAFC',
-                        }}
-                      >
-                        {customer.mobile}
-                      </TableCell>
-
-                      {/* GST */}
-                      <TableCell
-                        sx={{
-                          py: 1.6,
-                          px: 3,
-                          fontSize: '13.5px',
-                          color: '#334155',
-                          fontWeight: 600,
-                          borderBottom: isLast ? 'none' : '1px solid #F8FAFC',
-                        }}
-                      >
-                        {customer.gst}
-                      </TableCell>
-
-                      {/* Actions (Edit & Delete) */}
+                      {/* Total Debit (Dr) */}
                       <TableCell
                         align="right"
                         sx={{
                           py: 1.6,
-                          px: 3,
-                          borderBottom: isLast ? 'none' : '1px solid #F8FAFC',
+                          px: 2.5,
+                          fontSize: '13.5px',
+                          fontWeight: 700,
+                          color: '#1E293B',
+                          borderBottom: isLast ? 'none' : '1px solid #F1F5F9',
+                        }}
+                      >
+                        ₹{totalDebitNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </TableCell>
+
+                      {/* Total Credit (Cr) */}
+                      <TableCell
+                        align="right"
+                        sx={{
+                          py: 1.6,
+                          px: 2.5,
+                          fontSize: '13.5px',
+                          fontWeight: 700,
+                          color: '#16A34A',
+                          borderBottom: isLast ? 'none' : '1px solid #F1F5F9',
+                        }}
+                      >
+                        ₹{totalCreditNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </TableCell>
+
+                      {/* Net Balance / Status */}
+                      <TableCell
+                        align="right"
+                        sx={{
+                          py: 1.6,
+                          px: 2.5,
+                          borderBottom: isLast ? 'none' : '1px solid #F1F5F9',
+                        }}
+                      >
+                        {pendingDueNum > 0 ? (
+                          <Box sx={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                            <Typography sx={{ fontSize: '13.5px', fontWeight: 800, color: '#DC2626' }}>
+                              ₹{pendingDueNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </Typography>
+                            <Chip
+                              label="Due"
+                              size="small"
+                              sx={{
+                                height: '18px',
+                                fontSize: '10px',
+                                fontWeight: 700,
+                                backgroundColor: '#FEE2E2',
+                                color: '#DC2626',
+                                borderRadius: '4px',
+                                mt: 0.2,
+                              }}
+                            />
+                          </Box>
+                        ) : netBalanceNum > 0 ? (
+                          <Box sx={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                            <Typography sx={{ fontSize: '13.5px', fontWeight: 800, color: '#0284C7' }}>
+                              +₹{netBalanceNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </Typography>
+                            <Chip
+                              label="Advance"
+                              size="small"
+                              sx={{
+                                height: '18px',
+                                fontSize: '10px',
+                                fontWeight: 700,
+                                backgroundColor: '#E0F2FE',
+                                color: '#0284C7',
+                                borderRadius: '4px',
+                                mt: 0.2,
+                              }}
+                            />
+                          </Box>
+                        ) : (
+                          <Box sx={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                            <Typography sx={{ fontSize: '13px', fontWeight: 700, color: '#16A34A' }}>
+                              ₹0.00
+                            </Typography>
+                            <Chip
+                              label="Settled"
+                              size="small"
+                              sx={{
+                                height: '18px',
+                                fontSize: '10px',
+                                fontWeight: 700,
+                                backgroundColor: '#DCFCE7',
+                                color: '#16A34A',
+                                borderRadius: '4px',
+                                mt: 0.2,
+                              }}
+                            />
+                          </Box>
+                        )}
+                      </TableCell>
+
+                      {/* Actions */}
+                      <TableCell
+                        align="center"
+                        sx={{
+                          py: 1.6,
+                          px: 2,
+                          borderBottom: isLast ? 'none' : '1px solid #F1F5F9',
                         }}
                       >
                         <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.8 }}>
+                          {/* Statement Button */}
+                          <Tooltip title="View Statement" arrow>
+                            <IconButton
+                              size="small"
+                              onClick={() => onSelectCustomerForParticular?.(customer.name, 'Account Details')}
+                              sx={{
+                                color: '#0B4DB7',
+                                backgroundColor: '#EFF6FF',
+                                border: '1px solid #BFDBFE',
+                                borderRadius: '6px',
+                                p: 0.7,
+                                '&:hover': {
+                                  color: '#FFFFFF',
+                                  backgroundColor: '#0B4DB7',
+                                  borderColor: '#0B4DB7',
+                                },
+                              }}
+                            >
+                              <AccountBalanceWalletRoundedIcon sx={{ fontSize: 16 }} />
+                            </IconButton>
+                          </Tooltip>
+
+                          {/* Record Payment Button */}
+                          <Tooltip title="Record Payment / Credit" arrow>
+                            <IconButton
+                              size="small"
+                              onClick={() => handleOpenPayment(customer)}
+                              sx={{
+                                color: '#16A34A',
+                                backgroundColor: '#F0FDF4',
+                                border: '1px solid #BBF7D0',
+                                borderRadius: '6px',
+                                p: 0.7,
+                                '&:hover': {
+                                  color: '#FFFFFF',
+                                  backgroundColor: '#16A34A',
+                                  borderColor: '#16A34A',
+                                },
+                              }}
+                            >
+                              <PaymentsRoundedIcon sx={{ fontSize: 16 }} />
+                            </IconButton>
+                          </Tooltip>
+
                           {/* Edit Customer Button */}
                           <Tooltip title="Edit Customer" arrow>
                             <IconButton
@@ -514,7 +781,6 @@ export const CustomersPage: FC<CustomersPageProps> = ({ onAddNew, onSelectCustom
                                 border: '1px solid #E2E8F0',
                                 borderRadius: '6px',
                                 p: 0.7,
-                                transition: 'all 0.15s ease',
                                 '&:hover': {
                                   color: '#0B4DB7',
                                   backgroundColor: '#EFF6FF',
@@ -537,7 +803,6 @@ export const CustomersPage: FC<CustomersPageProps> = ({ onAddNew, onSelectCustom
                                 border: '1px solid #E2E8F0',
                                 borderRadius: '6px',
                                 p: 0.7,
-                                transition: 'all 0.15s ease',
                                 '&:hover': {
                                   color: '#DC2626',
                                   backgroundColor: '#FEF2F2',
@@ -558,6 +823,114 @@ export const CustomersPage: FC<CustomersPageProps> = ({ onAddNew, onSelectCustom
           </Table>
         </TableContainer>
       </Paper>
+
+      {/* Quick Payment Modal */}
+      <Dialog
+        open={openPaymentModal}
+        onClose={() => setOpenPaymentModal(false)}
+        maxWidth="xs"
+        fullWidth
+        slotProps={{
+          paper: {
+            sx: { borderRadius: '12px', p: 1 },
+          },
+        }}
+      >
+        <DialogTitle sx={{ fontSize: '18px', fontWeight: 700, color: '#0F172A', pb: 0.5 }}>
+          Record Payment / Credit
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            {paymentCustomer && (
+              <Box sx={{ p: 1.5, borderRadius: '8px', backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                <Typography sx={{ fontSize: '12px', color: '#64748B', fontWeight: 600 }}>Customer</Typography>
+                <Typography sx={{ fontSize: '15px', fontWeight: 800, color: '#0F172A' }}>
+                  {paymentCustomer.name}
+                </Typography>
+              </Box>
+            )}
+
+            <Box>
+              <Typography sx={{ fontSize: '13px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
+                Credit Amount (₹) *
+              </Typography>
+              <TextField
+                fullWidth
+                size="small"
+                type="number"
+                placeholder="Enter amount"
+                value={paymentForm.creditAmount}
+                onChange={(e) => setPaymentForm({ ...paymentForm, creditAmount: e.target.value })}
+                slotProps={{
+                  input: { sx: { fontSize: '14px', fontWeight: 700, borderRadius: '6px' } },
+                }}
+              />
+            </Box>
+
+            <Box>
+              <Typography sx={{ fontSize: '13px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
+                Company / Account
+              </Typography>
+              <Autocomplete
+                fullWidth
+                size="small"
+                autoHighlight
+                options={companies.length > 0 ? companies.map((c) => c.name) : ['General']}
+                value={paymentForm.companyName || null}
+                onChange={(_, val) => setPaymentForm({ ...paymentForm, companyName: val || '' })}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    placeholder="Select company..."
+                    sx={{
+                      backgroundColor: '#FFFFFF',
+                      borderRadius: '6px',
+                    }}
+                  />
+                )}
+              />
+            </Box>
+
+            <Box>
+              <Typography sx={{ fontSize: '13px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
+                Payment Date
+              </Typography>
+              <TextField
+                fullWidth
+                size="small"
+                value={paymentForm.date}
+                onChange={(e) => setPaymentForm({ ...paymentForm, date: e.target.value })}
+                placeholder="DD-MM-YYYY"
+                slotProps={{
+                  input: { sx: { fontSize: '13.5px', fontWeight: 500, borderRadius: '6px' } },
+                }}
+              />
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, pt: 1 }}>
+          <Button onClick={() => setOpenPaymentModal(false)} sx={{ color: '#64748B', fontWeight: 600, textTransform: 'none' }}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            disableElevation
+            onClick={handleSavePayment}
+            disabled={paymentLoading}
+            sx={{
+              backgroundColor: '#16A34A',
+              color: '#FFFFFF',
+              fontWeight: 700,
+              textTransform: 'none',
+              px: 2.5,
+              borderRadius: '6px',
+              '&:hover': { backgroundColor: '#15803D' },
+            }}
+          >
+            {paymentLoading ? 'Saving...' : 'Record Credit'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Edit Customer Dialog Modal */}
       <Dialog
@@ -666,6 +1039,23 @@ export const CustomersPage: FC<CustomersPageProps> = ({ onAddNew, onSelectCustom
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Date Range Filter Print Modal */}
+      <DateRangePrintModal
+        open={openDatePrintModal}
+        onClose={() => setOpenDatePrintModal(false)}
+        title="Print Customers Directory & Balances"
+        subtitle="Select transaction date range to filter customer records for A4 print."
+        items={filteredCustomers}
+        getDateFromItem={(c) => (c as any).lastTransactionDate || ''}
+        onConfirmPrint={(itemsToPrint, rangeText) => {
+          printCustomerListDirectly(
+            itemsToPrint,
+            'CUSTOMERS DIRECTORY & BALANCES MASTER LIST',
+            rangeText
+          );
+        }}
+      />
     </Box>
   );
 };

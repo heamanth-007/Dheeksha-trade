@@ -4,6 +4,7 @@ import {
   getParticularById,
   getNextBillNo,
   createParticular,
+  updateParticular,
   deleteParticular,
   uploadParticularPdf,
   deleteParticularPdf,
@@ -19,6 +20,6 @@ router.route('/next-bill-no').get(getNextBillNo);
 router.route('/:id/pdf').post(uploadParticularPdf).delete(deleteParticularPdf);
 
 // Generic ID routes
-router.route('/:id').get(getParticularById).delete(deleteParticular);
+router.route('/:id').get(getParticularById).put(updateParticular).delete(deleteParticular);
 
 export default router;

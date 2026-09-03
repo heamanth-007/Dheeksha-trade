@@ -32,7 +32,12 @@ import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded';
 import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
 import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded';
 import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
+import SavingsRoundedIcon from '@mui/icons-material/SavingsRounded';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import PrintOutlinedIcon from '@mui/icons-material/PrintOutlined';
 import { CustomersApi, AccountsApi, CompaniesApi } from '../services/api';
+import { printCustomerListDirectly } from '../utils/printUtils';
+import { DateRangePrintModal } from './DateRangePrintModal';
 
 export interface CustomerFinancial {
   _id?: string;
@@ -80,11 +85,13 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
 
   // Quick Payment / Add Credit Modal State
   const [openPaymentModal, setOpenPaymentModal] = useState(false);
+  const [openDatePrintModal, setOpenDatePrintModal] = useState(false);
   const [paymentCustomer, setPaymentCustomer] = useState<CustomerFinancial | null>(null);
   const [companies, setCompanies] = useState<any[]>([]);
   const [paymentForm, setPaymentForm] = useState({
     companyName: '',
     creditAmount: '',
+    paymentType: 'Advance Payment',
     date: new Date().toLocaleDateString('en-GB').replace(/\//g, '-'),
     notes: '',
   });
@@ -124,6 +131,7 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
     let totalDebit = 0;
     let totalCredit = 0;
     let totalPendingDue = 0;
+    let totalAdvanceHeld = 0;
     let pendingCustomersCount = 0;
     let settledCustomersCount = 0;
     let advanceCustomersCount = 0;
@@ -132,14 +140,17 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
       const deb = c.totalDebit || 0;
       const cred = c.totalCredit || 0;
       const due = c.pendingDue || 0;
+      const net = c.netBalance || 0;
+
       totalDebit += deb;
       totalCredit += cred;
       totalPendingDue += due;
 
-      if (due > 0) {
-        pendingCustomersCount += 1;
-      } else if ((c.netBalance || 0) > 0) {
+      if (net > 0) {
+        totalAdvanceHeld += net;
         advanceCustomersCount += 1;
+      } else if (due > 0) {
+        pendingCustomersCount += 1;
       } else {
         settledCustomersCount += 1;
       }
@@ -149,6 +160,7 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
       totalDebit,
       totalCredit,
       totalPendingDue,
+      totalAdvanceHeld,
       pendingCustomersCount,
       settledCustomersCount,
       advanceCustomersCount,
@@ -219,21 +231,23 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
   // Open Quick Payment Dialog
   const handleOpenPayment = (customer: CustomerFinancial) => {
     setPaymentCustomer(customer);
+    const due = customer.pendingDue || 0;
     setPaymentForm({
       companyName: companies.length > 0 ? companies[0].name : 'General',
-      creditAmount: (customer.pendingDue || 0) > 0 ? String(customer.pendingDue) : '',
+      creditAmount: due > 0 ? String(due) : '',
+      paymentType: due > 0 ? 'Bill Payment' : 'Advance Payment',
       date: new Date().toLocaleDateString('en-GB').replace(/\//g, '-'),
       notes: '',
     });
     setOpenPaymentModal(true);
   };
 
-  // Save Quick Payment
+  // Save Quick Payment / Advance Credit
   const handleSavePayment = async () => {
     if (!paymentCustomer) return;
     const amountNum = parseFloat(paymentForm.creditAmount.replace(/,/g, ''));
     if (isNaN(amountNum) || amountNum <= 0) {
-      alert('Please enter a valid payment amount');
+      alert('Please enter a valid payment/advance amount');
       return;
     }
 
@@ -280,6 +294,26 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
     });
   }, [customers, searchTerm, statusFilter]);
 
+  // Live preview for Payment Modal
+  const modalCalculations = useMemo(() => {
+    if (!paymentCustomer) return null;
+    const currentDebit = paymentCustomer.totalDebit || 0;
+    const currentCredit = paymentCustomer.totalCredit || 0;
+    const inputCredit = parseFloat(paymentForm.creditAmount.replace(/,/g, '')) || 0;
+    const newTotalCredit = currentCredit + inputCredit;
+    const newNetBalance = newTotalCredit - currentDebit;
+    const newPendingDue = Math.max(0, currentDebit - newTotalCredit);
+
+    return {
+      currentDebit,
+      currentCredit,
+      inputCredit,
+      newTotalCredit,
+      newNetBalance,
+      newPendingDue,
+    };
+  }, [paymentCustomer, paymentForm.creditAmount]);
+
   return (
     <Box
       sx={{
@@ -301,20 +335,22 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
         }}
       >
         <Box>
-          <Typography
-            variant="h1"
-            sx={{
-              fontSize: { xs: '24px', sm: '28px', md: '30px' },
-              fontWeight: 800,
-              color: '#0F172A',
-              letterSpacing: '-0.025em',
-              lineHeight: 1.2,
-            }}
-          >
-            All Customers & Balances
-          </Typography>
-          <Typography sx={{ fontSize: '13.5px', color: '#64748B', mt: 0.4, fontWeight: 500 }}>
-            Complete overview of customer accounts, total purchases, payments received, and pending balances
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Typography
+              variant="h1"
+              sx={{
+                fontSize: { xs: '24px', sm: '28px', md: '30px' },
+                fontWeight: 800,
+                color: '#0F172A',
+                letterSpacing: '-0.025em',
+                lineHeight: 1.2,
+              }}
+            >
+              All Customers & Ledger Balances
+            </Typography>
+          </Box>
+          <Typography sx={{ fontSize: '13.5px', color: '#64748B', mt: 0.5, fontWeight: 500 }}>
+            Complete overview of customer accounts with Debit (Purchases), Credit (Paid/Advance), and Net Balance
           </Typography>
         </Box>
 
@@ -337,7 +373,7 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
               border: '1px solid #E2E8F0',
               px: 1.5,
               height: '40px',
-              width: { xs: '100%', sm: '260px' },
+              width: { xs: '100%', sm: '280px' },
               boxSizing: 'border-box',
               boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
               transition: 'all 0.2s',
@@ -358,7 +394,7 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
               }}
             />
             <InputBase
-              placeholder="Search customers by name, phone..."
+              placeholder="Search by name, phone, GST..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               sx={{
@@ -376,6 +412,33 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
               }}
             />
           </Box>
+
+          {/* Print All / Filtered Customers Report Button with Date Range Filter */}
+          <Button
+            variant="outlined"
+            onClick={() => setOpenDatePrintModal(true)}
+            startIcon={<PrintOutlinedIcon sx={{ fontSize: 19 }} />}
+            sx={{
+              backgroundColor: '#FFFFFF',
+              color: '#0F172A',
+              borderColor: '#CBD5E1',
+              height: '40px',
+              px: 2,
+              borderRadius: '8px',
+              fontSize: '13.5px',
+              fontWeight: 700,
+              textTransform: 'none',
+              letterSpacing: '-0.01em',
+              whiteSpace: 'nowrap',
+              boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
+              '&:hover': {
+                backgroundColor: '#F8FAFC',
+                borderColor: '#94A3B8',
+              },
+            }}
+          >
+            Print Report ({filteredCustomers.length})
+          </Button>
 
           {/* Add New Customer Button */}
           {onAddNewCustomer && (
@@ -407,14 +470,15 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
         </Box>
       </Box>
 
-      {/* Top Metric Cards (Overview) */}
+      {/* Top Metric Cards (Overview: Debit, Credit, Net Due, Advance) */}
       <Box
         sx={{
           display: 'grid',
           gridTemplateColumns: {
             xs: '1fr',
             sm: 'repeat(2, 1fr)',
-            lg: 'repeat(4, 1fr)',
+            md: 'repeat(3, 1fr)',
+            lg: 'repeat(5, 1fr)',
           },
           gap: 2,
           mb: 3,
@@ -424,21 +488,21 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
         <Paper
           elevation={0}
           sx={{
-            p: 2.2,
+            p: 2,
             borderRadius: '12px',
             border: '1px solid #EEF2F6',
             backgroundColor: '#FFFFFF',
             boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
             display: 'flex',
             alignItems: 'center',
-            gap: 2,
+            gap: 1.8,
           }}
         >
           <Box
             sx={{
-              width: 48,
-              height: 48,
-              borderRadius: '12px',
+              width: 44,
+              height: 44,
+              borderRadius: '10px',
               backgroundColor: '#EFF6FF',
               color: '#0B4DB7',
               display: 'flex',
@@ -447,39 +511,39 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
               flexShrink: 0,
             }}
           >
-            <PeopleAltRoundedIcon sx={{ fontSize: 26 }} />
+            <PeopleAltRoundedIcon sx={{ fontSize: 24 }} />
           </Box>
           <Box>
-            <Typography sx={{ fontSize: '12.5px', fontWeight: 600, color: '#64748B' }}>
+            <Typography sx={{ fontSize: '11.5px', fontWeight: 600, color: '#64748B' }}>
               Total Customers
             </Typography>
-            <Typography sx={{ fontSize: '22px', fontWeight: 800, color: '#0F172A', lineHeight: 1.2, mt: 0.3 }}>
+            <Typography sx={{ fontSize: '20px', fontWeight: 800, color: '#0F172A', lineHeight: 1.2, mt: 0.3 }}>
               {financialTotals.totalCount}
             </Typography>
           </Box>
         </Paper>
 
-        {/* Card 2: Total Sales / Billed (Debit) */}
+        {/* Card 2: Total Debit (Total Purchases / Billed) */}
         <Paper
           elevation={0}
           sx={{
-            p: 2.2,
+            p: 2,
             borderRadius: '12px',
             border: '1px solid #EEF2F6',
             backgroundColor: '#FFFFFF',
             boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
             display: 'flex',
             alignItems: 'center',
-            gap: 2,
+            gap: 1.8,
           }}
         >
           <Box
             sx={{
-              width: 48,
-              height: 48,
-              borderRadius: '12px',
+              width: 44,
+              height: 44,
+              borderRadius: '10px',
               backgroundColor: '#F8FAFC',
-              color: '#475569',
+              color: '#334155',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -487,37 +551,37 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
               border: '1px solid #E2E8F0',
             }}
           >
-            <TrendingUpRoundedIcon sx={{ fontSize: 26 }} />
+            <TrendingUpRoundedIcon sx={{ fontSize: 24 }} />
           </Box>
           <Box>
-            <Typography sx={{ fontSize: '12.5px', fontWeight: 600, color: '#64748B' }}>
-              Total Billed (Sales)
+            <Typography sx={{ fontSize: '11.5px', fontWeight: 600, color: '#64748B' }}>
+              Total Debit (Purchases)
             </Typography>
-            <Typography sx={{ fontSize: '20px', fontWeight: 800, color: '#1E293B', lineHeight: 1.2, mt: 0.3 }}>
+            <Typography sx={{ fontSize: '18px', fontWeight: 800, color: '#1E293B', lineHeight: 1.2, mt: 0.3 }}>
               ₹{financialTotals.totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </Typography>
           </Box>
         </Paper>
 
-        {/* Card 3: Total Paid / Kuduthadhu (Credit) */}
+        {/* Card 3: Total Credit (Paid / Advances Received) */}
         <Paper
           elevation={0}
           sx={{
-            p: 2.2,
+            p: 2,
             borderRadius: '12px',
             border: '1px solid #EEF2F6',
             backgroundColor: '#FFFFFF',
             boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
             display: 'flex',
             alignItems: 'center',
-            gap: 2,
+            gap: 1.8,
           }}
         >
           <Box
             sx={{
-              width: 48,
-              height: 48,
-              borderRadius: '12px',
+              width: 44,
+              height: 44,
+              borderRadius: '10px',
               backgroundColor: '#F0FDF4',
               color: '#16A34A',
               display: 'flex',
@@ -526,37 +590,37 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
               flexShrink: 0,
             }}
           >
-            <CheckCircleOutlineRoundedIcon sx={{ fontSize: 26 }} />
+            <CheckCircleOutlineRoundedIcon sx={{ fontSize: 24 }} />
           </Box>
           <Box>
-            <Typography sx={{ fontSize: '12.5px', fontWeight: 600, color: '#16A34A' }}>
-              Total Paid
+            <Typography sx={{ fontSize: '11.5px', fontWeight: 600, color: '#16A34A' }}>
+              Total Credit (Paid)
             </Typography>
-            <Typography sx={{ fontSize: '20px', fontWeight: 800, color: '#16A34A', lineHeight: 1.2, mt: 0.3 }}>
+            <Typography sx={{ fontSize: '18px', fontWeight: 800, color: '#16A34A', lineHeight: 1.2, mt: 0.3 }}>
               ₹{financialTotals.totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </Typography>
           </Box>
         </Paper>
 
-        {/* Card 4: Total Pending Due */}
+        {/* Card 4: Total Pending Due (Receivables) */}
         <Paper
           elevation={0}
           sx={{
-            p: 2.2,
+            p: 2,
             borderRadius: '12px',
             border: '1px solid #FECACA',
             backgroundColor: '#FEF2F2',
             boxShadow: '0 1px 3px rgba(220, 38, 38, 0.06)',
             display: 'flex',
             alignItems: 'center',
-            gap: 2,
+            gap: 1.8,
           }}
         >
           <Box
             sx={{
-              width: 48,
-              height: 48,
-              borderRadius: '12px',
+              width: 44,
+              height: 44,
+              borderRadius: '10px',
               backgroundColor: '#DC2626',
               color: '#FFFFFF',
               display: 'flex',
@@ -565,21 +629,60 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
               flexShrink: 0,
             }}
           >
-            <ErrorOutlineRoundedIcon sx={{ fontSize: 26 }} />
+            <ErrorOutlineRoundedIcon sx={{ fontSize: 24 }} />
           </Box>
           <Box>
-            <Typography sx={{ fontSize: '12.5px', fontWeight: 700, color: '#991B1B' }}>
-              Pending Balance
+            <Typography sx={{ fontSize: '11.5px', fontWeight: 700, color: '#991B1B' }}>
+              Total Pending Due
             </Typography>
-            <Typography sx={{ fontSize: '20px', fontWeight: 800, color: '#DC2626', lineHeight: 1.2, mt: 0.3 }}>
+            <Typography sx={{ fontSize: '18px', fontWeight: 800, color: '#DC2626', lineHeight: 1.2, mt: 0.3 }}>
               ₹{financialTotals.totalPendingDue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </Typography>
+          </Box>
+        </Paper>
+
+        {/* Card 5: Total Advance Held */}
+        <Paper
+          elevation={0}
+          sx={{
+            p: 2,
+            borderRadius: '12px',
+            border: '1px solid #BAE6FD',
+            backgroundColor: '#F0F9FF',
+            boxShadow: '0 1px 3px rgba(2, 132, 199, 0.06)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1.8,
+          }}
+        >
+          <Box
+            sx={{
+              width: 44,
+              height: 44,
+              borderRadius: '10px',
+              backgroundColor: '#0284C7',
+              color: '#FFFFFF',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <SavingsRoundedIcon sx={{ fontSize: 24 }} />
+          </Box>
+          <Box>
+            <Typography sx={{ fontSize: '11.5px', fontWeight: 700, color: '#0369A1' }}>
+              Advance Balances
+            </Typography>
+            <Typography sx={{ fontSize: '18px', fontWeight: 800, color: '#0284C7', lineHeight: 1.2, mt: 0.3 }}>
+              ₹{financialTotals.totalAdvanceHeld.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </Typography>
           </Box>
         </Paper>
       </Box>
 
       {/* Filter Tabs / Pills */}
-      <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
+      <Box sx={{ display: 'flex', gap: 1, mb: 2.2, flexWrap: 'wrap', alignItems: 'center' }}>
         <Chip
           label={`All Customers (${financialTotals.totalCount})`}
           onClick={() => setStatusFilter('ALL')}
@@ -628,24 +731,29 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
             },
           }}
         />
-        {financialTotals.advanceCustomersCount > 0 && (
-          <Chip
-            label={`Advance Balance (${financialTotals.advanceCustomersCount})`}
-            onClick={() => setStatusFilter('ADVANCE')}
-            sx={{
-              fontWeight: 600,
-              fontSize: '13px',
-              backgroundColor: statusFilter === 'ADVANCE' ? '#0284C7' : '#FFFFFF',
-              color: statusFilter === 'ADVANCE' ? '#FFFFFF' : '#0284C7',
-              border: '1px solid',
-              borderColor: statusFilter === 'ADVANCE' ? '#0284C7' : '#BAE6FD',
-              cursor: 'pointer',
-              '&:hover': {
-                backgroundColor: statusFilter === 'ADVANCE' ? '#0369A1' : '#F0F9FF',
-              },
-            }}
-          />
-        )}
+        <Chip
+          label={`Advance Customers (${financialTotals.advanceCustomersCount})`}
+          onClick={() => setStatusFilter('ADVANCE')}
+          sx={{
+            fontWeight: 600,
+            fontSize: '13px',
+            backgroundColor: statusFilter === 'ADVANCE' ? '#0284C7' : '#FFFFFF',
+            color: statusFilter === 'ADVANCE' ? '#FFFFFF' : '#0284C7',
+            border: '1px solid',
+            borderColor: statusFilter === 'ADVANCE' ? '#0284C7' : '#BAE6FD',
+            cursor: 'pointer',
+            '&:hover': {
+              backgroundColor: statusFilter === 'ADVANCE' ? '#0369A1' : '#F0F9FF',
+            },
+          }}
+        />
+
+        <Box sx={{ ml: 'auto', display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 0.8, color: '#64748B' }}>
+          <InfoOutlinedIcon sx={{ fontSize: 16 }} />
+          <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+            Advance: Credit &gt; Debit | Due: Debit &gt; Credit
+          </Typography>
+        </Box>
       </Box>
 
       {/* Main Table Card */}
@@ -661,7 +769,7 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
         }}
       >
         <TableContainer>
-          <Table sx={{ minWidth: 900 }} aria-label="all customers balance table">
+          <Table sx={{ minWidth: 950 }} aria-label="all customers balance table">
             <TableHead>
               <TableRow sx={{ backgroundColor: '#F8FAFC' }}>
                 <TableCell
@@ -711,12 +819,21 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
                     px: 2.5,
                     fontSize: '11.5px',
                     fontWeight: 700,
-                    color: '#475569',
+                    color: '#1E293B',
                     letterSpacing: '0.04em',
                     borderBottom: '1px solid #EEF2F6',
+                    width: '150px',
                   }}
                 >
-                  TOTAL BILLED
+                  <Tooltip title="Total value of products billed / purchased by customer (Debit Dr)" arrow>
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help' }}>
+                      <span>DEBIT (DR)</span>
+                      <InfoOutlinedIcon sx={{ fontSize: 13, color: '#94A3B8' }} />
+                    </Box>
+                  </Tooltip>
+                  <Typography sx={{ fontSize: '10px', color: '#64748B', fontWeight: 500 }}>
+                    Product Purchases
+                  </Typography>
                 </TableCell>
                 <TableCell
                   align="right"
@@ -728,9 +845,18 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
                     color: '#16A34A',
                     letterSpacing: '0.04em',
                     borderBottom: '1px solid #EEF2F6',
+                    width: '150px',
                   }}
                 >
-                  TOTAL PAID
+                  <Tooltip title="Total advance and payments received from customer (Credit Cr)" arrow>
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help' }}>
+                      <span>CREDIT (CR)</span>
+                      <InfoOutlinedIcon sx={{ fontSize: 13, color: '#16A34A' }} />
+                    </Box>
+                  </Tooltip>
+                  <Typography sx={{ fontSize: '10px', color: '#16A34A', fontWeight: 500 }}>
+                    Paid / Advance
+                  </Typography>
                 </TableCell>
                 <TableCell
                   align="right"
@@ -739,12 +865,21 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
                     px: 2.5,
                     fontSize: '11.5px',
                     fontWeight: 700,
-                    color: '#DC2626',
+                    color: '#475569',
                     letterSpacing: '0.04em',
                     borderBottom: '1px solid #EEF2F6',
+                    width: '160px',
                   }}
                 >
-                  PENDING BALANCE
+                  <Tooltip title="Net balance = Total Credit (Paid) minus Total Debit (Purchased)" arrow>
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help' }}>
+                      <span>NET BALANCE</span>
+                      <InfoOutlinedIcon sx={{ fontSize: 13, color: '#94A3B8' }} />
+                    </Box>
+                  </Tooltip>
+                  <Typography sx={{ fontSize: '10px', color: '#64748B', fontWeight: 500 }}>
+                    Due / Advance Status
+                  </Typography>
                 </TableCell>
                 <TableCell
                   align="center"
@@ -892,7 +1027,7 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
                         )}
                       </TableCell>
 
-                      {/* Total Billed (Debit) */}
+                      {/* Total Debit (Dr) */}
                       <TableCell
                         align="right"
                         sx={{
@@ -904,10 +1039,15 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
                           borderBottom: isLast ? 'none' : '1px solid #F1F5F9',
                         }}
                       >
-                        ₹{totalDebitNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        <Typography sx={{ fontSize: '14px', fontWeight: 700, color: '#1E293B' }}>
+                          ₹{totalDebitNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </Typography>
+                        <Typography sx={{ fontSize: '10.5px', color: '#64748B', fontWeight: 500 }}>
+                          Debit (Dr)
+                        </Typography>
                       </TableCell>
 
-                      {/* Total Paid */}
+                      {/* Total Credit (Cr) */}
                       <TableCell
                         align="right"
                         sx={{
@@ -919,10 +1059,15 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
                           borderBottom: isLast ? 'none' : '1px solid #F1F5F9',
                         }}
                       >
-                        ₹{totalCreditNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        <Typography sx={{ fontSize: '14px', fontWeight: 700, color: '#16A34A' }}>
+                          ₹{totalCreditNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </Typography>
+                        <Typography sx={{ fontSize: '10.5px', color: '#16A34A', fontWeight: 500 }}>
+                          Credit (Cr)
+                        </Typography>
                       </TableCell>
 
-                      {/* Pending Balance */}
+                      {/* Net Balance / Status */}
                       <TableCell
                         align="right"
                         sx={{
@@ -937,11 +1082,11 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
                               ₹{pendingDueNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </Typography>
                             <Chip
-                              label="Due"
+                              label="Pending Due"
                               size="small"
                               sx={{
-                                height: '18px',
-                                fontSize: '10px',
+                                height: '20px',
+                                fontSize: '10.5px',
                                 fontWeight: 700,
                                 backgroundColor: '#FEE2E2',
                                 color: '#DC2626',
@@ -956,11 +1101,11 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
                               +₹{netBalanceNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </Typography>
                             <Chip
-                              label="Advance"
+                              label="Advance Balance"
                               size="small"
                               sx={{
-                                height: '18px',
-                                fontSize: '10px',
+                                height: '20px',
+                                fontSize: '10.5px',
                                 fontWeight: 700,
                                 backgroundColor: '#E0F2FE',
                                 color: '#0284C7',
@@ -978,8 +1123,8 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
                               label="Settled"
                               size="small"
                               sx={{
-                                height: '18px',
-                                fontSize: '10px',
+                                height: '20px',
+                                fontSize: '10.5px',
                                 fontWeight: 700,
                                 backgroundColor: '#DCFCE7',
                                 color: '#16A34A',
@@ -1002,7 +1147,7 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
                       >
                         <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.8 }}>
                           {/* View Statement / Account Details Button */}
-                          <Tooltip title="View Account Statement & Ledger" arrow>
+                          <Tooltip title="View Account Statement & Ledger History" arrow>
                             <Button
                               size="small"
                               variant="outlined"
@@ -1028,8 +1173,8 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
                             </Button>
                           </Tooltip>
 
-                          {/* Quick Payment Button */}
-                          <Tooltip title="Record Payment / Add Credit" arrow>
+                          {/* Quick Payment / Advance Button */}
+                          <Tooltip title="Record Advance Payment or Settlement Credit" arrow>
                             <IconButton
                               size="small"
                               onClick={() => handleOpenPayment(customer)}
@@ -1123,14 +1268,14 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
         }}
       >
         <DialogTitle sx={{ fontSize: '18px', fontWeight: 700, color: '#0F172A', pb: 0.5 }}>
-          Record Payment (Add Credit)
+          Record Payment / Advance (Add Credit)
         </DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
             {paymentCustomer && (
               <Box
                 sx={{
-                  p: 1.5,
+                  p: 1.6,
                   borderRadius: '8px',
                   backgroundColor: '#F8FAFC',
                   border: '1px solid #E2E8F0',
@@ -1142,22 +1287,48 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
                 <Typography sx={{ fontSize: '15px', fontWeight: 800, color: '#0F172A' }}>
                   {paymentCustomer.name}
                 </Typography>
-                <Typography sx={{ fontSize: '12px', color: '#DC2626', fontWeight: 700, mt: 0.3 }}>
-                  Current Pending Due: ₹
-                  {(paymentCustomer.pendingDue || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </Typography>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1, pt: 1, borderTop: '1px dashed #CBD5E1' }}>
+                  <Box>
+                    <Typography sx={{ fontSize: '11px', color: '#64748B', fontWeight: 600 }}>Total Debit (Dr)</Typography>
+                    <Typography sx={{ fontSize: '13px', color: '#1E293B', fontWeight: 700 }}>
+                      ₹{(paymentCustomer.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography sx={{ fontSize: '11px', color: '#64748B', fontWeight: 600 }}>Total Credit (Cr)</Typography>
+                    <Typography sx={{ fontSize: '13px', color: '#16A34A', fontWeight: 700 }}>
+                      ₹{(paymentCustomer.totalCredit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ textAlign: 'right' }}>
+                    <Typography sx={{ fontSize: '11px', color: '#64748B', fontWeight: 600 }}>Current Balance</Typography>
+                    {(paymentCustomer.pendingDue || 0) > 0 ? (
+                      <Typography sx={{ fontSize: '13px', color: '#DC2626', fontWeight: 800 }}>
+                        ₹{(paymentCustomer.pendingDue || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })} Due
+                      </Typography>
+                    ) : (paymentCustomer.netBalance || 0) > 0 ? (
+                      <Typography sx={{ fontSize: '13px', color: '#0284C7', fontWeight: 800 }}>
+                        +₹{(paymentCustomer.netBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })} Adv
+                      </Typography>
+                    ) : (
+                      <Typography sx={{ fontSize: '13px', color: '#16A34A', fontWeight: 800 }}>
+                        ₹0.00 Settled
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
               </Box>
             )}
 
             <Box>
               <Typography sx={{ fontSize: '13px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
-                Payment / Credit Amount (₹) *
+                Payment / Advance Credit Amount (₹) *
               </Typography>
               <TextField
                 fullWidth
                 size="small"
                 type="number"
-                placeholder="Enter amount paid"
+                placeholder="Enter amount (e.g. 1000000)"
                 value={paymentForm.creditAmount}
                 onChange={(e) => setPaymentForm({ ...paymentForm, creditAmount: e.target.value })}
                 slotProps={{
@@ -1167,6 +1338,38 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
                 }}
               />
             </Box>
+
+            {/* Live Calculation Preview */}
+            {modalCalculations && modalCalculations.inputCredit > 0 && (
+              <Box
+                sx={{
+                  p: 1.4,
+                  borderRadius: '6px',
+                  backgroundColor: '#F0FDF4',
+                  border: '1px solid #BBF7D0',
+                }}
+              >
+                <Typography sx={{ fontSize: '11.5px', color: '#15803D', fontWeight: 700, mb: 0.3 }}>
+                  Calculation Preview:
+                </Typography>
+                <Typography sx={{ fontSize: '12px', color: '#166534', fontWeight: 500 }}>
+                  New Total Credit: ₹{modalCalculations.newTotalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </Typography>
+                {modalCalculations.newPendingDue > 0 ? (
+                  <Typography sx={{ fontSize: '12.5px', color: '#DC2626', fontWeight: 700, mt: 0.3 }}>
+                    Remaining Due: ₹{modalCalculations.newPendingDue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </Typography>
+                ) : modalCalculations.newNetBalance > 0 ? (
+                  <Typography sx={{ fontSize: '12.5px', color: '#0284C7', fontWeight: 700, mt: 0.3 }}>
+                    Remaining Advance Balance: +₹{modalCalculations.newNetBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </Typography>
+                ) : (
+                  <Typography sx={{ fontSize: '12.5px', color: '#16A34A', fontWeight: 700, mt: 0.3 }}>
+                    Account fully Settled (₹0.00)
+                  </Typography>
+                )}
+              </Box>
+            )}
 
             <Box>
               <Typography sx={{ fontSize: '13px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
@@ -1246,7 +1449,7 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
               '&:hover': { backgroundColor: '#15803D' },
             }}
           >
-            {paymentLoading ? 'Saving...' : 'Record Payment'}
+            {paymentLoading ? 'Saving...' : 'Record Credit'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -1358,6 +1561,24 @@ export const AllCustomersPage: FC<AllCustomersPageProps> = ({
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Date Range Filter Print Modal */}
+      <DateRangePrintModal
+        open={openDatePrintModal}
+        onClose={() => setOpenDatePrintModal(false)}
+        title="Print Customer Ledger & Balances"
+        subtitle="Select the transaction date interval to filter records for A4 printing."
+        items={filteredCustomers}
+        getDateFromItem={(c) => c.lastTransactionDate || ''}
+        onConfirmPrint={(itemsToPrint, rangeText) => {
+          const filterLabel = statusFilter !== 'ALL' ? ` - ${statusFilter}` : '';
+          printCustomerListDirectly(
+            itemsToPrint,
+            `CUSTOMERS MASTER LEDGER & BALANCES REPORT${filterLabel}`,
+            rangeText
+          );
+        }}
+      />
     </Box>
   );
 };

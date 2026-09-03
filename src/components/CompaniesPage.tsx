@@ -24,7 +24,9 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import ModeEditOutlineRoundedIcon from '@mui/icons-material/ModeEditOutlineRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import PrintOutlinedIcon from '@mui/icons-material/PrintOutlined';
 import { CompaniesApi } from '../services/api';
+import { printCompaniesListDirectly } from '../utils/printUtils';
 
 export interface Company {
   _id?: string;
@@ -213,6 +215,33 @@ export const CompaniesPage: FC<CompaniesPageProps> = ({ onAddCompany }) => {
               }}
             />
           </Box>
+
+          {/* Print Companies List Button */}
+          <Button
+            variant="outlined"
+            onClick={() => printCompaniesListDirectly(filteredCompanies)}
+            startIcon={<PrintOutlinedIcon sx={{ fontSize: 18 }} />}
+            sx={{
+              backgroundColor: '#FFFFFF',
+              color: '#0F172A',
+              borderColor: '#CBD5E1',
+              height: '38px',
+              px: 1.8,
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: 700,
+              textTransform: 'none',
+              letterSpacing: '-0.01em',
+              whiteSpace: 'nowrap',
+              boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
+              '&:hover': {
+                backgroundColor: '#F8FAFC',
+                borderColor: '#94A3B8',
+              },
+            }}
+          >
+            Print List ({filteredCompanies.length})
+          </Button>
 
           {/* Add Company Button */}
           <Button
