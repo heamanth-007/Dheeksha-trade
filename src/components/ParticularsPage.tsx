@@ -291,11 +291,12 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
     }
   };
 
-  // Fetch Particulars (Loads all bills across all customers, sorted with latest first)
-  const fetchParticulars = async () => {
+  // Fetch Particulars (Loads bills filtered by customer, or all)
+  const fetchParticulars = async (targetCustomer?: string) => {
     try {
       setParticularLoading(true);
-      const data = await ParticularsApi.getAll();
+      const cust = targetCustomer !== undefined ? targetCustomer : (filterCustomer || currentCustomerName);
+      const data = await ParticularsApi.getAll(cust && cust !== 'ALL' ? cust : undefined);
       setParticularDetails(data || []);
     } catch (err) {
       console.error('Failed to load particulars:', err);
@@ -309,7 +310,7 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
     if (activeSubTab === 'Account Details') {
       fetchAccounts(custToFetch);
     } else if (activeSubTab === 'Particular Details') {
-      fetchParticulars();
+      fetchParticulars(custToFetch);
     }
   }, [activeSubTab, filterCustomer, currentCustomerName]);
 
@@ -374,30 +375,27 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
     return num;
   }, [discount, subtotalAmount]);
 
-  // Packing Calculation (Supports % like 2% or flat rupees)
+  // Packing Calculation (Calculated from reduced amount after discount)
   const packingVal = useMemo(() => {
     if (!packing) return 0;
     const cleanPack = String(packing).trim();
     const num = parseFloat(cleanPack) || 0;
     if (num <= 0) return 0;
-    if (cleanPack.endsWith('%') || (num <= 100 && !cleanPack.includes('.'))) {
-      return (subtotalAmount * num) / 100;
+    const baseAfterDiscount = Math.max(0, subtotalAmount - discountVal);
+    if (cleanPack.endsWith('%') || num <= 100) {
+      return (baseAfterDiscount * num) / 100;
     }
     return num;
-  }, [packing, subtotalAmount]);
+  }, [packing, subtotalAmount, discountVal]);
 
-  // Tax Calculation (Supports % like 5%, 18% or flat rupees)
+  // Tax Calculation (Manual fixed amount directly added)
   const taxVal = useMemo(() => {
     if (!tax) return 0;
-    const cleanTax = String(tax).trim();
+    const cleanTax = String(tax).trim().replace(/[^0-9.]/g, '');
     const num = parseFloat(cleanTax) || 0;
     if (num <= 0) return 0;
-    const baseForTax = Math.max(0, subtotalAmount - discountVal + packingVal);
-    if (cleanTax.endsWith('%') || num <= 100) {
-      return (baseForTax * num) / 100;
-    }
     return num;
-  }, [tax, subtotalAmount, discountVal, packingVal]);
+  }, [tax]);
 
   // Final Net Total Amount
   const finalTotalAmount = useMemo(() => {
@@ -691,8 +689,9 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
     const cleanPack = pStr.replace(/[^0-9.]/g, '');
     const pNum = parseFloat(cleanPack) || 0;
     if (pNum <= 0) return 0;
-    return pStr.includes('%') || pNum <= 100 ? (editSubtotal * pNum) / 100 : pNum;
-  }, [editSubtotal, editBillForm.packing]);
+    const baseAfterDiscount = Math.max(0, editSubtotal - editDiscountVal);
+    return pStr.includes('%') || pNum <= 100 ? (baseAfterDiscount * pNum) / 100 : pNum;
+  }, [editSubtotal, editDiscountVal, editBillForm.packing]);
 
   const editTaxVal = useMemo(() => {
     const tStr = String(editBillForm.tax || '').trim();
@@ -700,9 +699,8 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
     const cleanTax = tStr.replace(/[^0-9.]/g, '');
     const tNum = parseFloat(cleanTax) || 0;
     if (tNum <= 0) return 0;
-    const base = Math.max(0, editSubtotal - editDiscountVal + editPackingVal);
-    return tStr.includes('%') || tNum <= 100 ? (base * tNum) / 100 : tNum;
-  }, [editSubtotal, editDiscountVal, editPackingVal, editBillForm.tax]);
+    return tNum;
+  }, [editBillForm.tax]);
 
   const editFinalTotal = useMemo(() => {
     const net = Math.max(0, editSubtotal - editDiscountVal + editPackingVal + editTaxVal);
@@ -1377,11 +1375,12 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
                 </Box>
                 <Box>
                   <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
-                    Tax
+                    Tax (₹)
                   </Typography>
                   <TextField
                     fullWidth
                     size="small"
+                    placeholder="Enter Tax Amount"
                     value={tax}
                     onChange={(e) => setTax(e.target.value)}
                     slotProps={{
@@ -1998,10 +1997,49 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
                   letterSpacing: '-0.01em',
                 }}
               >
-                Account Details {currentCustomerName || filterCustomer ? `- ${currentCustomerName || filterCustomer}` : ''}
+                Account Details {filterCustomer && filterCustomer !== 'ALL' ? `- ${filterCustomer}` : (currentCustomerName ? `- ${currentCustomerName}` : '(All Customers)')}
               </Typography>
 
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                <Autocomplete
+                  size="small"
+                  options={[{ id: 'ALL', name: 'All Customers' }, ...customerOptions]}
+                  getOptionLabel={(option) => (typeof option === 'string' ? option : option.name || '')}
+                  isOptionEqualToValue={(option, val) => option.name === val.name}
+                  value={
+                    filterCustomer && filterCustomer !== 'ALL'
+                      ? customerOptions.find((c) => c.name === filterCustomer) || { id: filterCustomer, name: filterCustomer }
+                      : (currentCustomerName && currentCustomerName !== 'ALL' ? customerOptions.find((c) => c.name === currentCustomerName) || { id: 'ALL', name: 'All Customers' } : { id: 'ALL', name: 'All Customers' })
+                  }
+                  onChange={(_, val) => {
+                    const selectedName = val ? (val.id === 'ALL' ? 'ALL' : val.name) : 'ALL';
+                    setFilterCustomer(selectedName);
+                    if (val && val.id !== 'ALL') {
+                      setCurrentCustomerName(val.name);
+                      setSelectedCustomerId(val.id);
+                      localStorage.setItem('dheeksha_active_customer', val.name);
+                    }
+                    fetchAccounts(selectedName);
+                  }}
+                  sx={{ width: 220 }}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      placeholder="Filter Customer..."
+                      sx={{
+                        backgroundColor: '#FFFFFF',
+                        borderRadius: '6px',
+                        '& .MuiOutlinedInput-root': {
+                          height: '34px',
+                          borderRadius: '6px',
+                          fontSize: '12.5px',
+                          fontWeight: 600,
+                          py: 0,
+                        },
+                      }}
+                    />
+                  )}
+                />
                 <Button
                   variant="contained"
                   disableElevation
@@ -2182,10 +2220,49 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
                 letterSpacing: '-0.01em',
               }}
             >
-              Particular Details (All Bills)
+              Particular Details {filterCustomer && filterCustomer !== 'ALL' ? `- ${filterCustomer}` : (currentCustomerName ? `- ${currentCustomerName}` : '(All Bills)')}
             </Typography>
 
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+              <Autocomplete
+                size="small"
+                options={[{ id: 'ALL', name: 'All Customers' }, ...customerOptions]}
+                getOptionLabel={(option) => (typeof option === 'string' ? option : option.name || '')}
+                isOptionEqualToValue={(option, val) => option.name === val.name}
+                value={
+                  filterCustomer && filterCustomer !== 'ALL'
+                    ? customerOptions.find((c) => c.name === filterCustomer) || { id: filterCustomer, name: filterCustomer }
+                    : (currentCustomerName && currentCustomerName !== 'ALL' ? customerOptions.find((c) => c.name === currentCustomerName) || { id: 'ALL', name: 'All Customers' } : { id: 'ALL', name: 'All Customers' })
+                }
+                onChange={(_, val) => {
+                  const selectedName = val ? (val.id === 'ALL' ? 'ALL' : val.name) : 'ALL';
+                  setFilterCustomer(selectedName);
+                  if (val && val.id !== 'ALL') {
+                    setCurrentCustomerName(val.name);
+                    setSelectedCustomerId(val.id);
+                    localStorage.setItem('dheeksha_active_customer', val.name);
+                  }
+                  fetchParticulars(selectedName);
+                }}
+                sx={{ width: 220 }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    placeholder="Filter Customer..."
+                    sx={{
+                      backgroundColor: '#FFFFFF',
+                      borderRadius: '6px',
+                      '& .MuiOutlinedInput-root': {
+                        height: '34px',
+                        borderRadius: '6px',
+                        fontSize: '12.5px',
+                        fontWeight: 600,
+                        py: 0,
+                      },
+                    }}
+                  />
+                )}
+              />
               <Chip
                 label={`${particularDetails.length} Bills`}
                 size="small"
@@ -2280,7 +2357,7 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
                     const totalNum = parseFloat(String(row.total || row.amount || '0').replace(/,/g, '')) || 0;
                     const discStr = row.discount && parseFloat(row.discount) > 0 ? (parseFloat(row.discount) <= 100 ? `${row.discount}%` : `₹${row.discount}`) : '-';
                     const packStr = row.packing && parseFloat(row.packing) > 0 ? (parseFloat(row.packing) <= 100 ? `${row.packing}%` : `₹${row.packing}`) : '-';
-                    const taxStr = row.tax && parseFloat(row.tax) > 0 ? (parseFloat(row.tax) <= 100 ? `${row.tax}%` : `₹${row.tax}`) : '-';
+                    const taxStr = row.tax && parseFloat(row.tax) > 0 ? `₹${parseFloat(row.tax).toLocaleString('en-IN')}` : '-';
                     const hasPdf = Boolean(row.pdfData && row.pdfData.trim() !== '');
                     const isUploading = uploadingBillId === rowId;
 
@@ -3164,11 +3241,12 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
 
             <Box>
               <Typography sx={{ fontSize: '12.5px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
-                Tax (% or ₹)
+                Tax (₹)
               </Typography>
               <TextField
                 fullWidth
                 size="small"
+                placeholder="Enter Tax Amount"
                 value={editBillForm.tax}
                 onChange={(e) => setEditBillForm((prev) => ({ ...prev, tax: e.target.value }))}
                 slotProps={{

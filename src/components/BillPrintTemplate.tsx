@@ -58,15 +58,16 @@ export const BillPrintTemplate: React.FC<BillPrintTemplateProps> = ({ bill }) =>
     }
   }
 
-  // Packing calculation
+  // Packing calculation (Calculated from reduced amount after discount)
   const rawPackStr = String(bill.packing ?? '').trim();
   const cleanPack = rawPackStr.replace(/[^0-9.]/g, '');
   const packNum = parseFloat(cleanPack) || 0;
   let packingAmt = 0;
   let packingLabel = 'Packing Amount';
   if (packNum > 0) {
+    const baseAfterDiscount = Math.max(0, subtotal - discountAmt);
     if (rawPackStr.includes('%') || packNum <= 100) {
-      packingAmt = (subtotal * packNum) / 100;
+      packingAmt = (baseAfterDiscount * packNum) / 100;
       packingLabel = `Packing Amount (${bill.packing || packNum}${rawPackStr.includes('%') ? '' : '%'})`;
     } else {
       packingAmt = packNum;
@@ -74,21 +75,15 @@ export const BillPrintTemplate: React.FC<BillPrintTemplateProps> = ({ bill }) =>
     }
   }
 
-  // Tax calculation
+  // Tax calculation (Manual flat amount)
   const rawTaxStr = String(bill.tax ?? '').trim();
   const cleanTax = rawTaxStr.replace(/[^0-9.]/g, '');
   const taxNum = parseFloat(cleanTax) || 0;
   let taxAmt = 0;
   let taxLabel = 'Tax Amount';
   if (taxNum > 0) {
-    const baseForTax = Math.max(0, subtotal - discountAmt + packingAmt);
-    if (rawTaxStr.includes('%') || taxNum <= 100) {
-      taxAmt = (baseForTax * taxNum) / 100;
-      taxLabel = `Tax Amount (${bill.tax || taxNum}${rawTaxStr.includes('%') ? '' : '%'})`;
-    } else {
-      taxAmt = taxNum;
-      taxLabel = `Tax Amount (₹${taxNum})`;
-    }
+    taxAmt = taxNum;
+    taxLabel = `Tax Amount (₹${taxNum.toLocaleString('en-IN')})`;
   }
 
   // Grand Total calculation
