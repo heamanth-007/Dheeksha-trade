@@ -48,6 +48,9 @@ export interface Customer {
   totalCredit?: number;
   pendingDue?: number;
   netBalance?: number;
+  totalAdvanceReceived?: number;
+  totalAdvanceUsed?: number;
+  availableAdvance?: number;
   status?: 'PENDING' | 'SETTLED' | 'ADVANCE';
 }
 

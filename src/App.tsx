@@ -10,6 +10,8 @@ import { CompaniesPage } from './components/CompaniesPage';
 import { AddCompanyPage } from './components/AddCompanyPage';
 import { ProductsPage } from './components/ProductsPage';
 import { ParticularsPage, type ParticularSubTab } from './components/ParticularsPage';
+import { PerformaPage } from './components/PerformaPage';
+import { AllPerformaPage } from './components/AllPerformaPage';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -82,6 +84,23 @@ function App() {
         />
 
         <Box component="main" sx={{ flexGrow: 1, width: '100%' }}>
+          {/* Performa Tab */}
+          {activeTab === 'Performa' && (
+            <PerformaPage
+              initialCustomerName={selectedCustomerName}
+              onNavigateAllPerforma={() => setActiveTab('All Performa')}
+              onSelectCustomerForBill={handleCustomerSelectedForParticular}
+            />
+          )}
+
+          {/* All Performa Tab */}
+          {activeTab === 'All Performa' && (
+            <AllPerformaPage
+              onAddNewPerforma={() => setActiveTab('Performa')}
+              onSelectCustomerForBill={handleCustomerSelectedForParticular}
+            />
+          )}
+
           {/* Particulars Tab */}
           {activeTab === 'Particulars' && (
             <ParticularsPage

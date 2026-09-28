@@ -16,6 +16,7 @@ import productRoutes from './routes/productRoutes';
 import particularRoutes from './routes/particularRoutes';
 import accountRoutes from './routes/accountRoutes';
 import authRoutes from './routes/authRoutes';
+import performaRoutes from './routes/performaRoutes';
 import { seedDefaultAdmin } from './controllers/authController';
 
 const app: Application = express();
@@ -106,6 +107,7 @@ app.use('/api/companies', companyRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/particulars', particularRoutes);
 app.use('/api/accounts', accountRoutes);
+app.use('/api/performas', performaRoutes);
 
 // Global Error Handler
 app.use(errorHandler);

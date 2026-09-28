@@ -3,6 +3,7 @@ import { Particular } from '../models/Particular';
 import { AccountLedger } from '../models/AccountLedger';
 import { escapeRegex, recalculateCustomerBalance } from '../utils/ledgerUtils';
 import { isCloudinaryConfigured, uploadToCloudinary, deleteFromCloudinary } from '../config/cloudinary';
+import { consumeBillAgainstPerforma, reverseBillConsumption } from '../services/performaConsumptionService';
 
 export const getParticulars = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -118,7 +119,21 @@ export const createParticular = async (req: Request, res: Response, next: NextFu
       await recalculateCustomerBalance(particular.customerName);
     }
 
-    res.status(201).json({ success: true, data: particular });
+    // Automatically trigger Performa allocation consumption
+    const performaConsumption = await consumeBillAgainstPerforma(
+      String(particular._id),
+      particular.billNo,
+      particular.customerName,
+      particular.date,
+      particular.products || [],
+      billTotalNum
+    );
+
+    res.status(201).json({
+      success: true,
+      data: particular,
+      performaConsumption,
+    });
   } catch (error) {
     next(error);
   }
@@ -213,7 +228,22 @@ export const updateParticular = async (req: Request, res: Response, next: NextFu
     }
     await recalculateCustomerBalance(updatedParticular.customerName);
 
-    res.status(200).json({ success: true, data: updatedParticular });
+    // Reverse old Performa consumption and re-apply for updated items
+    await reverseBillConsumption(String(id));
+    const performaConsumption = await consumeBillAgainstPerforma(
+      String(updatedParticular._id),
+      updatedParticular.billNo,
+      updatedParticular.customerName,
+      updatedParticular.date,
+      updatedParticular.products || [],
+      billTotalNum
+    );
+
+    res.status(200).json({
+      success: true,
+      data: updatedParticular,
+      performaConsumption,
+    });
   } catch (error) {
     next(error);
   }
@@ -234,7 +264,10 @@ export const deleteParticular = async (req: Request, res: Response, next: NextFu
       await deleteFromCloudinary(particular.pdfPublicId);
     }
 
-    // 2. Delete Particular Document
+    // 2. Reverse Performa consumption atomically before deleting
+    await reverseBillConsumption(String(req.params.id));
+
+    // 3. Delete Particular Document
     await Particular.findByIdAndDelete(req.params.id);
 
     // 3. Cascade Delete: Delete matching AccountLedger entry comprehensively

@@ -1032,6 +1032,124 @@ export const printProductsListDirectly = (products: any[]) => {
   triggerBrowserPrint(htmlContent);
 };
 
+export const generatePerformaHtml = (performa: any): string => {
+  const customer = performa.customerSnapshot || { name: 'Customer' };
+  const formatCurrency = (val: number | undefined) => {
+    const num = val || 0;
+    return num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  const productRowsHtml = (performa.products || []).map((item: any, idx: number) => `
+    <tr style="border-bottom: 1px solid #E2E8F0;">
+      <td style="padding: 8px 6px; text-align: center; color: #64748B;">${idx + 1}</td>
+      <td style="padding: 8px 10px;">
+        <div style="font-weight: 700; color: #0F172A;">${item.productSnapshot?.productName || item.productName || item.particular || 'Product'}</div>
+        ${(item.productSnapshot?.productCode || item.productCode) ? `<div style="font-size: 11px; color: #64748B;">Code: ${item.productSnapshot?.productCode || item.productCode}</div>` : ''}
+        ${(item.productSnapshot?.companyName || item.companyName) ? `<div style="font-size: 11px; color: #0B4DB7;">${item.productSnapshot?.companyName || item.companyName}</div>` : ''}
+      </td>
+      <td style="padding: 8px 8px; text-align: center; font-weight: 700;">${item.requiredCases}</td>
+      <td style="padding: 8px 8px; text-align: center; font-weight: 700; color: #0B4DB7;">${item.remainingCases !== undefined ? item.remainingCases : item.requiredCases}</td>
+      <td style="padding: 8px 8px; text-align: right;">₹${formatCurrency(item.rate)}</td>
+      <td style="padding: 8px 8px; text-align: center;">${item.pktPerUnit || 1}</td>
+      <td style="padding: 8px 10px; text-align: right; font-weight: 700;">₹${formatCurrency(item.allocatedAmount)}</td>
+    </tr>
+  `).join('');
+
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Performa - ${performa.performaNumber}</title>
+        <style>
+          @page { size: A4 portrait; margin: 10mm; }
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; margin: 0; padding: 10px; color: #000; background: #fff; }
+          .banner { background-color: #0F172A; color: #FFFFFF; text-align: center; padding: 6px 12px; border-radius: 4px; font-weight: 800; font-size: 14px; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 16px; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 18px; font-size: 13px; }
+        </style>
+      </head>
+      <body>
+        <div style="position: relative; text-align: center; margin-bottom: 14px;">
+          <div style="position: absolute; right: 0; top: 0; font-size: 13px; font-weight: 600;">S.Nagaraj</div>
+          <h1 style="font-size: 28px; font-weight: 800; margin: 0 0 2px 0;">Dheeksha Trade Link</h1>
+          <div style="font-size: 14px; font-weight: 600; color: #334155;">Sivakasi</div>
+        </div>
+
+        <div class="banner">PERFORMA / NOT A TAX INVOICE</div>
+
+        <div style="display: flex; justify-content: space-between; border: 1px solid #CBD5E1; border-radius: 6px; padding: 14px 18px; margin-bottom: 18px; background-color: #F8FAFC; font-size: 13px;">
+          <div>
+            <div style="margin-bottom: 6px;"><span style="color: #64748B; font-weight: 600;">Performa No: </span><span style="font-weight: 800; color: #0B4DB7; font-size: 15px;">${performa.performaNumber}</span></div>
+            <div style="margin-bottom: 6px;"><span style="color: #64748B; font-weight: 600;">Date: </span><span style="font-weight: 700;">${performa.date}</span></div>
+            <div><span style="color: #64748B; font-weight: 600;">Status: </span><span style="font-weight: 700;">${performa.status}</span></div>
+          </div>
+          <div>
+            <div style="margin-bottom: 4px;"><span style="color: #64748B; font-weight: 600;">Customer: </span><span style="font-weight: 800; font-size: 14px;">${customer.name}</span></div>
+            ${customer.phone ? `<div style="margin-bottom: 4px;"><span style="color: #64748B; font-weight: 600;">Phone: </span><span>${customer.phone}</span></div>` : ''}
+            ${customer.companyName ? `<div style="margin-bottom: 4px;"><span style="color: #64748B; font-weight: 600;">Company: </span><span>${customer.companyName}</span></div>` : ''}
+            ${customer.address ? `<div><span style="color: #64748B; font-weight: 600;">Address: </span><span>${customer.address}</span></div>` : ''}
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr style="background-color: #F1F5F9; border-bottom: 2px solid #0F172A;">
+              <th style="padding: 8px 6px; text-align: center; width: 35px;">#</th>
+              <th style="padding: 8px 10px; text-align: left;">Product Description</th>
+              <th style="padding: 8px 8px; text-align: center; width: 70px;">Req Cases</th>
+              <th style="padding: 8px 8px; text-align: center; width: 70px;">Remaining</th>
+              <th style="padding: 8px 8px; text-align: right; width: 80px;">Rate (₹)</th>
+              <th style="padding: 8px 8px; text-align: center; width: 60px;">Units</th>
+              <th style="padding: 8px 10px; text-align: right; width: 100px;">Allocated (₹)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${productRowsHtml}
+          </tbody>
+        </table>
+
+        <div style="display: flex; justify-content: space-between; border-top: 2px solid #0F172A; padding-top: 14px; margin-bottom: 20px;">
+          <div style="width: 55%; font-size: 11.5px; color: #64748B;">
+            ${performa.notes ? `<div style="font-size: 13px; color: #1E293B; margin-bottom: 8px;"><strong>Notes:</strong> <em>${performa.notes}</em></div>` : ''}
+            * This document confirms the reservation and product requirement allocation. Actual billing will consume matching product cases and deduct from the available customer advance.
+          </div>
+          <div style="width: 40%; font-size: 13.5px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+              <span>Total Required Cases:</span><strong>${performa.totalRequiredCases}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+              <span>Total Allocated Value:</span><strong>₹${formatCurrency(performa.totalAllocatedAmount)}</strong>
+            </div>
+            <div style="height: 1px; background: #E2E8F0; margin: 8px 0;"></div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 6px; color: #0B4DB7;">
+              <strong>Customer Advance:</strong><strong>₹${formatCurrency(performa.advanceAmount)}</strong>
+            </div>
+            ${performa.advanceUsedAmount ? `<div style="display: flex; justify-content: space-between; margin-bottom: 6px; color: #DC2626;"><span>Advance Consumed:</span><strong>-₹${formatCurrency(performa.advanceUsedAmount)}</strong></div>` : ''}
+            <div style="display: flex; justify-content: space-between; padding-top: 8px; border-top: 2px solid #0B4DB7; margin-top: 6px; font-size: 15px; color: #166534;">
+              <strong>Remaining Advance:</strong><strong>₹${formatCurrency(performa.remainingAdvanceAmount !== undefined ? performa.remainingAdvanceAmount : performa.advanceAmount)}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 36px; padding-top: 16px; border-top: 1px dashed #CBD5E1; font-size: 12px;">
+          <div style="text-align: center;">
+            <div style="height: 32px;"></div>
+            <div style="border-top: 1px solid #000; width: 150px; padding-top: 4px; font-weight: 600;">Customer Signature</div>
+          </div>
+          <div style="text-align: center;">
+            <div style="font-weight: 700; margin-bottom: 20px;">For Dheeksha Trade Link</div>
+            <div style="border-top: 1px solid #000; width: 160px; padding-top: 4px; font-weight: 600;">Authorized Signatory</div>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+};
+
+export const printPerformaDirectly = (performa: any) => {
+  const htmlContent = generatePerformaHtml(performa);
+  triggerBrowserPrint(htmlContent);
+};
+
 /**
  * Reusable hidden-iframe print helper with image loading support
  */
