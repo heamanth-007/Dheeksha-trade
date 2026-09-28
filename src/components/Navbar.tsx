@@ -4,7 +4,7 @@ import PersonOutlineRoundedIcon from '@mui/icons-material/PersonOutlineRounded';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import AdminPanelSettingsRoundedIcon from '@mui/icons-material/AdminPanelSettingsRounded';
 
-export type NavTab = 'Customers' | 'Company' | 'Product' | 'Particulars' | 'All Customers';
+export type NavTab = 'Customers' | 'Company' | 'Product' | 'Particulars' | 'All Customers' | 'Performa' | 'All Performa';
 
 interface NavbarProps {
   activeTab?: NavTab;
@@ -19,7 +19,7 @@ export const Navbar: FC<NavbarProps> = ({
   onNavigateCustomers,
   onLogout,
 }) => {
-  const tabs: NavTab[] = ['Customers', 'Company', 'Product', 'Particulars', 'All Customers'];
+  const tabs: NavTab[] = ['Customers', 'Company', 'Product', 'Particulars', 'All Customers', 'Performa', 'All Performa'];
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
   const handleTabClick = (tab: NavTab) => {

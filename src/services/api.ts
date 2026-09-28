@@ -135,6 +135,53 @@ export const AccountsApi = {
   delete: (id: string) => request<any>(`/accounts/${id}`, { method: 'DELETE' }),
 };
 
+// Performas API
+export const PerformasApi = {
+  getAll: (params?: {
+    customerName?: string;
+    customerId?: string;
+    companyName?: string;
+    status?: string;
+    search?: string;
+    startDate?: string;
+    endDate?: string;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.customerName && params.customerName !== 'ALL') searchParams.append('customerName', params.customerName);
+    if (params?.customerId) searchParams.append('customerId', params.customerId);
+    if (params?.companyName && params.companyName !== 'ALL') searchParams.append('companyName', params.companyName);
+    if (params?.status && params.status !== 'ALL') searchParams.append('status', params.status);
+    if (params?.search) searchParams.append('search', params.search);
+    if (params?.startDate) searchParams.append('startDate', params.startDate);
+    if (params?.endDate) searchParams.append('endDate', params.endDate);
+    if (params?.sortBy) searchParams.append('sortBy', params.sortBy);
+    if (params?.sortOrder) searchParams.append('sortOrder', params.sortOrder);
+    const queryStr = searchParams.toString();
+    return request<{ data: any[]; summary: any } | any[]>(`/performas${queryStr ? `?${queryStr}` : ''}`);
+  },
+  getNextNumber: () => request<{ nextPerformaNumber: string }>('/performas/next-number'),
+  getById: (id: string) => request<any>(`/performas/${id}`),
+  create: (data: any) => request<any>('/performas', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: any) => request<any>(`/performas/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id: string) => request<any>(`/performas/${id}`, { method: 'DELETE' }),
+  cancel: (id: string) => request<any>(`/performas/${id}/cancel`, { method: 'PATCH' }),
+  addAdvance: (data: {
+    customerId?: string;
+    customerName: string;
+    performaId?: string;
+    amount: number | string;
+    date?: string;
+    reference?: string;
+    notes?: string;
+  }) => request<any>('/performas/advance', { method: 'POST', body: JSON.stringify(data) }),
+  getCustomerSummary: (customerId: string) =>
+    request<any>(`/performas/customer/${encodeURIComponent(customerId)}/summary`),
+  getCustomerAudit: (customerId: string) =>
+    request<any[]>(`/performas/customer/${encodeURIComponent(customerId)}/audit`),
+};
+
 // Auth API
 export const AuthApi = {
   login: (credentials: { username: string; password: string }) =>

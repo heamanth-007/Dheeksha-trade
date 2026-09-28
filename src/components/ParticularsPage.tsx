@@ -42,6 +42,7 @@ import {
   ProductsApi,
   ParticularsApi,
   AccountsApi,
+  PerformasApi,
 } from '../services/api';
 import { BillPrintModal } from './BillPrintModal';
 import type { BillPrintData } from './BillPrintTemplate';
@@ -141,6 +142,9 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
   });
   const [creditLoading, setCreditLoading] = useState(false);
 
+  // Performa Integration State
+  const [customerPerformaSummary, setCustomerPerformaSummary] = useState<any | null>(null);
+
   // Bill Print Modal State
   const [selectedBillForPrint, setSelectedBillForPrint] = useState<BillPrintData | null>(null);
   const [printModalOpen, setPrintModalOpen] = useState(false);
@@ -229,6 +233,17 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
       setActiveSubTab(initialSubTab);
     }
   }, [initialSubTab]);
+
+  // Fetch customer's Performa advance & allocation summary
+  useEffect(() => {
+    if (!currentCustomerName || currentCustomerName === 'General') {
+      setCustomerPerformaSummary(null);
+      return;
+    }
+    PerformasApi.getCustomerSummary(currentCustomerName)
+      .then((res) => setCustomerPerformaSummary(res))
+      .catch((err) => console.error('Failed to load Performa summary for billing:', err));
+  }, [currentCustomerName]);
 
   // Load Dropdown Options
   useEffect(() => {
@@ -358,6 +373,39 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
     setPkt('');
   };
 
+  // Real-time Performa Allocation Matching for Current Product
+  const matchingPerformaInfo = useMemo(() => {
+    if (!customerPerformaSummary?.activePerformas || !selectedProduct) return null;
+    let totalAllocated = 0;
+    let totalRemaining = 0;
+    const prodNormalized = selectedProduct.trim().toLowerCase();
+
+    for (const pf of customerPerformaSummary.activePerformas) {
+      for (const prod of pf.products) {
+        const pName = (prod.productName || '').trim().toLowerCase();
+        const pCode = (prod.productCode || '').trim().toLowerCase();
+        if (pName === prodNormalized || (pCode && pCode === prodNormalized)) {
+          totalAllocated += prod.requiredCases || 0;
+          totalRemaining += prod.remainingCases || 0;
+        }
+      }
+    }
+
+    if (totalAllocated === 0 && totalRemaining === 0) return null;
+
+    const billedCases = parseFloat(quantity) || 0;
+    const remainingAfter = Math.max(0, totalRemaining - billedCases);
+    const exceeds = billedCases > totalRemaining;
+
+    return {
+      totalAllocated,
+      totalRemaining,
+      billedCases,
+      remainingAfter,
+      exceeds,
+    };
+  }, [customerPerformaSummary, selectedProduct, quantity]);
+
   // Subtotal (Sum of all products)
   const subtotalAmount = useMemo(() => {
     return productRows.reduce((acc, row) => acc + (parseFloat(row.amount) || 0), 0);
@@ -461,7 +509,12 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
         total: finalTotalAmount,
       };
 
-      alert(`Particular bill #${assignedBillNo} for ${company || 'General'} created successfully!`);
+      let successMsg = `Particular bill #${assignedBillNo} for ${company || 'General'} created successfully!`;
+      if (created?.performaConsumption?.consumed) {
+        successMsg += `\n\n✓ Performa Allocation Applied:\n- Consumed ${created.performaConsumption.totalCasesConsumed} cases (₹${created.performaConsumption.totalAmountConsumed?.toLocaleString('en-IN')})\n- Remaining Customer Advance: ₹${created.performaConsumption.remainingCustomerAdvance?.toLocaleString('en-IN')}`;
+      }
+      alert(successMsg);
+
       setBillNo('');
       setProductRows([]);
       setCaseCount('0');
@@ -471,6 +524,14 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
       setTax('');
       fetchAccounts(filterCustomer);
       fetchParticulars();
+
+      // Refresh customer Performa summary
+      if (currentCustomerName && currentCustomerName !== 'General') {
+        PerformasApi.getCustomerSummary(currentCustomerName)
+          .then((res) => setCustomerPerformaSummary(res))
+          .catch(() => {});
+      }
+
       setActiveSubTab('Particular Details');
 
       // Open the print invoice modal automatically
@@ -1194,6 +1255,13 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
                       />
                     )}
                   />
+                  {customerPerformaSummary && customerPerformaSummary.availableAdvance > 0 && (
+                    <Box sx={{ mt: 0.5 }}>
+                      <Typography sx={{ fontSize: '11px', color: '#166534', fontWeight: 700 }}>
+                        ★ Available Advance: ₹{customerPerformaSummary.availableAdvance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </Typography>
+                    </Box>
+                  )}
                 </Box>
                 <Box>
                   <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#475569', mb: 0.5 }}>
@@ -1529,6 +1597,7 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
                 minHeight: '48px',
                 display: 'flex',
                 alignItems: 'center',
+                justifyContent: 'space-between',
               }}
             >
               <Typography
@@ -1539,9 +1608,47 @@ export const ParticularsPage: FC<ParticularsPageProps> = ({ initialCustomerName,
                   letterSpacing: '-0.01em',
                 }}
               >
-                Product
+                Product Entry
               </Typography>
+
+              {customerPerformaSummary && customerPerformaSummary.availableAdvance > 0 && (
+                <Chip
+                  label={`Performa Available: ₹${customerPerformaSummary.availableAdvance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`}
+                  size="small"
+                  sx={{ backgroundColor: '#DCFCE7', color: '#166534', fontWeight: 800, fontSize: '11.5px' }}
+                />
+              )}
             </Box>
+
+            {matchingPerformaInfo && (
+              <Box
+                sx={{
+                  backgroundColor: matchingPerformaInfo.exceeds ? '#FEF2F2' : '#EFF6FF',
+                  borderBottom: `1px solid ${matchingPerformaInfo.exceeds ? '#FECACA' : '#BFDBFE'}`,
+                  px: 2,
+                  py: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 1,
+                }}
+              >
+                <Typography sx={{ fontSize: '12px', fontWeight: 700, color: matchingPerformaInfo.exceeds ? '#991B1B' : '#1E40AF' }}>
+                  📦 Performa Allocation: <strong>{matchingPerformaInfo.totalRemaining} cases</strong> available
+                  {matchingPerformaInfo.billedCases > 0 && (
+                    <span> | Bill: <strong>{matchingPerformaInfo.billedCases} cases</strong> | Remaining: <strong>{matchingPerformaInfo.remainingAfter} cases</strong></span>
+                  )}
+                </Typography>
+                {matchingPerformaInfo.exceeds && (
+                  <Chip
+                    label={`Performa available for ${matchingPerformaInfo.totalRemaining} cases only. ${matchingPerformaInfo.billedCases - matchingPerformaInfo.totalRemaining} outside Performa.`}
+                    size="small"
+                    sx={{ backgroundColor: '#FEE2E2', color: '#991B1B', fontWeight: 700, fontSize: '11px' }}
+                  />
+                )}
+              </Box>
+            )}
 
             <Box
               sx={{

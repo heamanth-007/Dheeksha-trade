@@ -35,6 +35,8 @@ export const getCustomers = async (_req: Request, res: Response, next: NextFunct
 
     const customers = await Customer.find().sort({ createdAt: 1 }).lean();
     const allLedgerEntries = await AccountLedger.find({}).lean();
+    const { PerformaAudit } = await import('../models/PerformaAudit');
+    const allAudits = await PerformaAudit.find({}).lean();
 
     // Group ledger by customer name (normalized lowercase)
     const statsMap = new Map<string, { totalDebit: number; totalCredit: number; lastDate: string }>();
@@ -55,18 +57,42 @@ export const getCustomers = async (_req: Request, res: Response, next: NextFunct
       statsMap.set(key, existing);
     }
 
+    // Group Performa audits for advance summary
+    const advanceMap = new Map<string, { received: number; used: number }>();
+    for (const a of allAudits) {
+      const key = (a.customerName || '').trim().toLowerCase();
+      if (!key) continue;
+
+      const curr = advanceMap.get(key) || { received: 0, used: 0 };
+      const amt = Number(a.amount) || 0;
+      if (a.type === 'ADVANCE_RECEIVED' || a.type === 'PERFORMA_ADVANCE') {
+        curr.received += amt;
+      } else if (a.type === 'PERFORMA_CONSUMED') {
+        curr.used += amt;
+      } else if (a.type === 'PERFORMA_REVERSED') {
+        curr.used = Math.max(0, curr.used - amt);
+      }
+      advanceMap.set(key, curr);
+    }
+
     const enrichedCustomers = customers.map((c: any) => {
       const key = (c.name || '').trim().toLowerCase();
       const stats = statsMap.get(key) || { totalDebit: 0, totalCredit: 0, lastDate: '' };
+      const advStats = advanceMap.get(key) || { received: 0, used: 0 };
+
       const totalDebit = Number(stats.totalDebit.toFixed(2));
       const totalCredit = Number(stats.totalCredit.toFixed(2));
       const pendingDue = Number(Math.max(0, totalDebit - totalCredit).toFixed(2));
       const netBalance = Number((totalCredit - totalDebit).toFixed(2));
 
+      const totalAdvanceReceived = Number((advStats.received + totalCredit).toFixed(2));
+      const totalAdvanceUsed = Number((advStats.used + totalDebit).toFixed(2));
+      const availableAdvance = Number(Math.max(0, totalAdvanceReceived - totalAdvanceUsed).toFixed(2));
+
       let status: 'PENDING' | 'SETTLED' | 'ADVANCE' = 'SETTLED';
       if (pendingDue > 0) {
         status = 'PENDING';
-      } else if (netBalance > 0) {
+      } else if (netBalance > 0 || availableAdvance > 0) {
         status = 'ADVANCE';
       }
 
@@ -76,6 +102,9 @@ export const getCustomers = async (_req: Request, res: Response, next: NextFunct
         totalCredit,
         pendingDue,
         netBalance,
+        totalAdvanceReceived,
+        totalAdvanceUsed,
+        availableAdvance,
         status,
         lastTransactionDate: stats.lastDate || null,
       };
